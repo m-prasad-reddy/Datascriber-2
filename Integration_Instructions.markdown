@@ -31,7 +31,7 @@ This document provides detailed instructions for setting up, configuring, and ex
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/m-prasad-reddy/Datascriber.git
+   git clone https://github.com/m-prasad-reddy/Datascriber-2.git
    cd Datascriber
    ```
 

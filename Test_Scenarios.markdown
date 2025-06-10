@@ -329,7 +329,7 @@ These scenarios test configuration, metadata management, and rejected query hand
 1. **Setup**:
    - **Clone Repository**:
      ```bash
-     git clone https://github.com/m-prasad-reddy/Datascriber.git
+     git clone https://github.com/m-prasad-reddy/Datascriber-2.git
      cd Datascriber
      ```
    - **Create Virtual Environment**:
