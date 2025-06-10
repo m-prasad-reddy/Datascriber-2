@@ -1,0 +1,5 @@
+{
+    "model_type": "openai",
+    "model_name": "text-embedding-3-small",
+    "confidence_threshold": 0.8
+}

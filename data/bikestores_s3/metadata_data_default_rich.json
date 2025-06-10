@@ -1,0 +1,652 @@
+{
+  "schema": "default",
+  "delimiter": ",",
+  "tables": [
+    {
+      "name": "brands",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "brand_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "brand_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": ['Electra','Haro','Heller','Pure Cycles','Ritchey','Strider','Sun Bicycles','Surly','Trek'],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "candidates",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "fullname",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "categories",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "category_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "category_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "customers",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "first_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "last_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "street",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "zip_code",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "employees",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "fullname",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "order_items",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [
+            "id"
+          ],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "item_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "list_price",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "discount",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "orders",
+      "description": "",
+      "synonyms": [
+        "sales_records"
+      ],
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [
+            "id"
+          ],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "order_status",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "order_date",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [
+            "date",
+            "order_day"
+          ],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "required_date",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "shipped_date",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "staff_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "products",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "product_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": ['Electra Amsterdam Fashion 3i Ladies - 2017/2018','Electra Amsterdam Royal 8i Ladies - 2018','Electra Cruiser 1 Tall - 2016/2018','Electra Townie Original 1 - 2018','Surly Straggler - 2016','Surly Troll Frameset - 2017','Trek Boone 7 - 2017','Trek Marlin 5 - 2018','Trek X-Caliber 8 - 2018'],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "brand_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "category_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "model_year",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "list_price",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "staffs",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "staff_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "first_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "last_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "active",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "manager_id",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "stocks",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "stores",
+      "description": "",
+      "synonyms": [],
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "store_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "street",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "zip_code",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    }
+  ]
+}

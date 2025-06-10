@@ -1,0 +1,8 @@
+spacy==3.7.2
+openai==1.30.0
+numpy==1.24.3
+pandas==2.0.3
+pyodbc==5.0.1
+boto3==1.34.0
+pyarrow==14.0.1
+python-dotenv==1.0.0

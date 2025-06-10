@@ -1,0 +1,6 @@
+{
+  "log_level": "DEBUG",
+  "max_bytes": 5242880,
+  "backup_count": 5,
+  "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+}

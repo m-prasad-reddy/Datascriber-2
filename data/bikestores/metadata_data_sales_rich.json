@@ -1,0 +1,447 @@
+{
+  "schema": "sales",
+  "delimiter": "\t",
+  "tables": [
+    {
+      "name": "customers",
+      "description": "",
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "int",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "first_name",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": ['name'],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "last_name",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": ['name'],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "phone",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "email",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "street",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "city",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "state",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "zip_code",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "stores",
+      "description": "",
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "int",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "store_name",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "phone",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "email",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "street",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "city",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "state",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "zip_code",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "staffs",
+      "description": "",
+      "columns": [
+        {
+          "name": "staff_id",
+          "type": "int",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "first_name",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "last_name",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "email",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "phone",
+          "type": "varchar",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "active",
+          "type": "tinyint",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "store_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "stores",
+            "column": "store_id"
+          },
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "manager_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "staffs",
+            "column": "staff_id"
+          },
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "orders",
+      "description": "",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "int",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "customer_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "customers",
+            "column": "customer_id"
+          },
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "order_status",
+          "type": "tinyint",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "order_date",
+          "type": "date",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "required_date",
+          "type": "date",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "shipped_date",
+          "type": "date",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "store_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "stores",
+            "column": "store_id"
+          },
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "staff_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "staffs",
+            "column": "staff_id"
+          },
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    },
+    {
+      "name": "order_items",
+      "description": "",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "orders",
+            "column": "order_id"
+          },
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "item_id",
+          "type": "int",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "product_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "production.products",
+            "column": "product_id"
+          },
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "quantity",
+          "type": "int",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "list_price",
+          "type": "decimal",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        },
+        {
+          "name": "discount",
+          "type": "decimal",
+          "description": "",
+          "references": null,
+          "unique_values": [],
+          "synonyms": [],
+          "range": null,
+          "date_format": null
+        }
+      ]
+    }
+  ]
+}

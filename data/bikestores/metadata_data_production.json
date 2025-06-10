@@ -1,0 +1,120 @@
+{
+  "schema": "production",
+  "delimiter": "\t",
+  "tables": [
+    {
+      "name": "categories",
+      "description": "",
+      "columns": [
+        {
+          "name": "category_id",
+          "type": "int",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "category_name",
+          "type": "varchar",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "brands",
+      "description": "",
+      "columns": [
+        {
+          "name": "brand_id",
+          "type": "int",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "brand_name",
+          "type": "varchar",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "products",
+      "description": "",
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "int",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "product_name",
+          "type": "varchar",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "brand_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "brands",
+            "column": "brand_id"
+          }
+        },
+        {
+          "name": "category_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "categories",
+            "column": "category_id"
+          }
+        },
+        {
+          "name": "model_year",
+          "type": "smallint",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "list_price",
+          "type": "decimal",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "stocks",
+      "description": "",
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "sales.stores",
+            "column": "store_id"
+          }
+        },
+        {
+          "name": "product_id",
+          "type": "int",
+          "description": "",
+          "references": {
+            "table": "products",
+            "column": "product_id"
+          }
+        },
+        {
+          "name": "quantity",
+          "type": "int",
+          "description": "",
+          "references": null
+        }
+      ]
+    }
+  ]
+}

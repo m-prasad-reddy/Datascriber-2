@@ -1,0 +1,5 @@
+{
+    "model_type": "sentence-transformers",
+    "model_name": "all-MiniLM-L6-v2",
+    "confidence_threshold": 0.8
+}

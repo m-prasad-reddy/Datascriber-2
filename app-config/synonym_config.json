@@ -1,0 +1,5 @@
+{
+  "synonym_mode": "dynamic",
+  "dynamic_synonym_threshold": 0.6,
+  "custom_synonyms": {}
+}

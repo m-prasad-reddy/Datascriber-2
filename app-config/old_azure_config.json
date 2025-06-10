@@ -1,0 +1,16 @@
+{
+  "azure_openai": {
+    "endpoint": "https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/",
+    "api_version": "2024-12-01-preview",
+    "embedding_model": {
+      "model_name": "text-embedding-3-small",
+      "deployment": "embedding-model",
+      "api_key": "<your-api-key>"
+    },
+    "llm_model": {
+      "model_name": "gpt-4o",
+      "deployment": "gpt-4o",
+      "api_key": "<your-api-key>"
+    }
+  }
+}
