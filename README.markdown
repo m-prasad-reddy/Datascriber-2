@@ -47,7 +47,7 @@ Datascriber is a Text-to-SQL system that converts natural language queries (NLQs
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/m-prasad-reddy/Datascriber.git
+   git clone https://github.com/m-prasad-reddy/Datascriber-2.git
    cd Datascriber
    ```
 
