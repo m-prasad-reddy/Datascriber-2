@@ -28,6 +28,7 @@ class DataExecutor:
         logger (logging.Logger): System-wide logger.
         llm_config (Dict): LLM configuration from llm_config.json.
         temp_dir (Path): Temporary directory for query results.
+        storage_manager (StorageManager): Storage manager instance.
     """
 
     def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
@@ -46,6 +47,7 @@ class DataExecutor:
             self.llm_config = self._load_llm_config()
             self.temp_dir = Path(self.config_utils.temp_dir) / "query_results"
             self.temp_dir.mkdir(parents=True, exist_ok=True)
+            self.storage_manager = StorageManager(self.config_utils, self.logger)
             self.logger.debug("Initialized DataExecutor")
         except ConfigError as e:
             self.logger.error(f"Failed to initialize DataExecutor: {str(e)}")
@@ -90,13 +92,14 @@ class DataExecutor:
             self.logger.error(f"Failed to initialize S3 filesystem: {str(e)}")
             raise ExecutionError(f"Failed to initialize S3 filesystem: {str(e)}")
 
-    def _call_sql(self, system_prompt: str, user_prompt: str, datasource: Dict) -> Optional[str]:
+    def _call_sql(self, system_prompt: str, user_prompt: str, datasource: Dict, schemas: List[str]) -> Optional[str]:
         """Call Azure Open AI or mock LLM to generate SQL query.
 
         Args:
             system_prompt (str): System prompt with schema and metadata.
             user_prompt (str): User prompt with NLQ and context.
             datasource (Dict): Datasource configuration.
+            schemas (List[str]): List of schema names.
 
         Returns:
             Optional[str]: Generated SQL query or None if call fails.
@@ -104,17 +107,21 @@ class DataExecutor:
         try:
             if self.llm_config.get("mock_enabled", False):
                 prompt_generator = PromptGenerator(self.config_utils, self.logger)
-                sql_query = prompt_generator.mock_llm_call(datasource, system_prompt + user_prompt)
+                sql_query = prompt_generator.mock_llm_call(datasource, system_prompt + user_prompt, schemas)
                 if sql_query and not sql_query.startswith("#"):
                     self.logger.debug(f"Returning mock SQL query: {sql_query}")
                     return sql_query
-                self.logger.warning("Invalid mock SQL query")
+                self.logger.warning(f"Invalid mock SQL query for schemas {schemas}")
                 return None
             azure_config = self.config_utils.load_azure_config()
+            required_keys = ["endpoint", "api_key"]
+            if not all(key in azure_config for key in required_keys):
+                self.logger.error(f"Missing Azure configuration keys: {[k for k in required_keys if k not in azure_config]}")
+                raise ExecutionError("Missing Azure configuration keys")
             client = AzureOpenAI(
                 azure_endpoint=azure_config["endpoint"],
                 api_key=azure_config["api_key"],
-                api_version=self.llm_config.get("api_version", "2023-10-01-preview")
+                api_version="2023-12-01-preview"
             )
             response = client.chat.completions.create(
                 model=self.llm_config.get("model_name", "gpt-4o"),
@@ -128,10 +135,10 @@ class DataExecutor:
             sql_query = response.choices[0].message.content.strip()
             if sql_query.startswith("```sql") and sql_query.endswith("```"):
                 sql_query = sql_query[6:-3].strip()
-            self.logger.debug(f"Generated SQL query for datasource {datasource['name']}: {sql_query}")
+            self.logger.debug(f"Generated SQL query for datasource {datasource['name']}, schemas {schemas}: {sql_query}")
             return sql_query
         except Exception as e:
-            self.logger.error(f"Failed to call LLM for datasource {datasource['name']}: {str(e)}")
+            self.logger.error(f"Failed to call LLM for datasource {datasource['name']}, schemas {schemas}: {str(e)}")
             return None
 
     def _get_s3_dataframe(self, schema: str, datasource: Dict, table_name: str) -> Optional[pd.DataFrame]:
@@ -148,10 +155,9 @@ class DataExecutor:
         try:
             if not table_name or table_name.isspace() or any(c in table_name for c in ["/", "\\"]):
                 raise ExecutionError(f"Invalid table name: {table_name}")
-            storage_manager = StorageManager(self.config_utils)
-            storage_manager._set_datasource(datasource)
-            s3_path = storage_manager.get_s3_path(schema, table_name)
-            file_format = storage_manager.file_type
+            self.storage_manager._set_datasource(datasource)
+            s3_path = self.storage_manager.get_s3_path(schema, table_name)
+            file_format = self.storage_manager.file_type
             if not s3_path or not file_format:
                 raise ExecutionError(f"No valid files found for table {table_name} in schema {schema}")
             s3fs = self._init_s3_filesystem()
@@ -166,7 +172,7 @@ class DataExecutor:
                 raise ExecutionError(f"Unsupported file format: {file_format}")
             table = dataset.to_table()
             df = table.to_pandas()
-            self.logger.debug(f"Loaded {len(df)} rows for table {table_name} from {s3_path}")
+            self.logger.debug(f"Loaded {len(df)} rows for table {table_name} from {s3_path} in schema {schema}")
             return df
         except ExecutionError as e:
             self.logger.error(f"Failed to load S3 data for table {table_name} in schema {schema}: {str(e)}")
@@ -197,49 +203,69 @@ class DataExecutor:
         Raises:
             ExecutionError: If query execution fails critically.
         """
-        storage_manager = StorageManager(self.config_utils)
-        storage_manager._set_datasource(datasource)
+        if not schemas:
+            self.logger.error(f"No schemas provided for S3 query execution, NLQ: {nlq}")
+            raise ExecutionError("No schemas provided")
+        self.storage_manager._set_datasource(datasource)
         for schema in schemas:
             try:
                 tables = prediction.get("tables", []) if prediction else []
                 if not tables:
-                    metadata = storage_manager.get_metadata(datasource, schema)
+                    metadata = self.storage_manager.get_metadata(datasource, schema)
                     tables = [t["name"] for t in metadata.get("tables", {}).values()[:1]]
                 if not tables:
-                    self.logger.warning(f"No tables identified for schema {schema}")
+                    self.logger.warning(f"No tables identified for schema {schema}, NLQ: {nlq}")
+                    try:
+                        self.storage_manager.store_rejected_query(
+                            datasource, nlq, schema, f"No tables identified in schema {schema}", user, "NO_TABLES"
+                        )
+                    except Exception as store_e:
+                        self.logger.error(f"Failed to store rejected query for schema {schema}, NLQ: {nlq}: {str(store_e)}")
                     continue
                 locals_dict = {}
                 for table in tables:
                     df = self._get_s3_dataframe(schema, datasource, table)
                     if df is None:
-                        self.logger.warning(f"Failed to load S3 data for table {table} in schema {schema}")
+                        self.logger.warning(f"Failed to load S3 data for table {table} in schema {schema}, NLQ: {nlq}")
+                        try:
+                            self.storage_manager.store_rejected_query(
+                                datasource, nlq, schema, f"Failed to load data for table {table}", user, "DATA_LOAD_ERROR"
+                            )
+                        except Exception as store_e:
+                            self.logger.error(f"Failed to store rejected query for schema {schema}, NLQ: {nlq}: {str(store_e)}")
                         continue
                     locals_dict[table] = df
                 result_df = sql.sqldf(sql_query, locals_dict)
                 if result_df.empty:
                     self.logger.warning(f"No data returned for NLQ: {nlq} in schema {schema}")
-                    storage_manager.store_rejected_query(
-                        datasource, nlq, f"No data returned in schema {schema}", user, "NO_DATA"
-                    )
+                    try:
+                        self.storage_manager.store_rejected_query(
+                            datasource, nlq, schema, f"No data returned in schema {schema}", user, "NO_DATA"
+                        )
+                    except Exception as store_e:
+                        self.logger.error(f"Failed to store rejected query for schema {schema}, NLQ: {nlq}: {str(store_e)}")
                     continue
                 sample_data = result_df.head(5)
                 timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
                 csv_path = self.temp_dir / f"output_{schema}_{timestamp}.csv"
                 csv_path.parent.mkdir(parents=True, exist_ok=True)
                 result_df.to_csv(csv_path, index=False)
-                self.logger.info(f"Generated output for NLQ '{nlq}' in schema {schema}: {csv_path}")
+                self.logger.info(f"Generated output for NLQ '{nlq}' in schema {schema}: {csv_path}, rows: {len(result_df)}")
                 return sample_data, str(csv_path), sql_query
             except sql.PandasSQLException as e:
                 self.logger.error(f"S3 query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}")
-                storage_manager.store_rejected_query(
-                    datasource, nlq, f"S3 query failed: {str(e)}", user, "PANDAS_SQL_ERROR"
-                )
+                try:
+                    self.storage_manager.store_rejected_query(
+                        datasource, nlq, schema, f"S3 query failed: {str(e)}", user, "PANDAS_SQL_ERROR"
+                    )
+                except Exception as store_e:
+                    self.logger.error(f"Failed to store rejected query for schema {schema}, NLQ: {nlq}: {str(store_e)}")
                 continue
         self.logger.error(f"S3 query execution failed for NLQ '{nlq}' across all schemas")
         raise ExecutionError(f"S3 query execution failed across all schemas")
 
     def _execute_sql_server_query(
-        self, sql_query: str, user: str, nlq: str, datasource: Dict
+        self, sql_query: str, user: str, nlq: str, datasource: Dict, schema: str
     ) -> Tuple[Optional[pd.DataFrame], Optional[str], str]:
         """Execute query on SQL Server using pyodbc.
 
@@ -248,6 +274,7 @@ class DataExecutor:
             user (str): User submitting the query.
             nlq (str): Original natural language query.
             datasource (Dict): Datasource configuration.
+            schema (str): Schema name.
 
         Returns:
             Tuple[Optional[pd.DataFrame], Optional[str], str]: Sample data, CSV path, and SQL query.
@@ -259,27 +286,31 @@ class DataExecutor:
             db_manager = DBManager(self.config_utils, self.logger)
             df = db_manager.execute_query(datasource, sql_query)
             if df.empty:
-                self.logger.warning(f"No data returned for NLQ: {nlq}")
-                storage_manager = StorageManager(self.config_utils)
-                storage_manager._set_datasource(datasource)
-                storage_manager.store_rejected_query(
-                    datasource, nlq, "No data returned", user, "NO_DATA"
-                )
+                self.logger.warning(f"No data returned for NLQ: {nlq} in schema {schema}")
+                try:
+                    self.storage_manager._set_datasource(datasource)
+                    self.storage_manager.store_rejected_query(
+                        datasource, nlq, schema, "No data returned", user, "NO_DATA"
+                    )
+                except Exception as store_e:
+                    self.logger.error(f"Failed to store rejected query for schema {schema}, NLQ: {nlq}: {str(store_e)}")
                 return None, None, sql_query
             sample_data = df.head(5)
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-            csv_path = self.temp_dir / f"output_{timestamp}.csv"
+            csv_path = self.temp_dir / f"output_{schema}_{timestamp}.csv"
             csv_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(csv_path, index=False)
-            self.logger.info(f"Generated output for NLQ '{nlq}': {csv_path}")
+            self.logger.info(f"Generated output for NLQ '{nlq}' in schema {schema}: {csv_path}, rows: {len(df)}")
             return sample_data, str(csv_path), sql_query
         except Exception as e:
-            self.logger.error(f"SQL Server query execution failed for NLQ '{nlq}': {str(e)}")
-            storage_manager = StorageManager(self.config_utils)
-            storage_manager._set_datasource(datasource)
-            storage_manager.store_rejected_query(
-                datasource, nlq, f"SQL Server query failed: {str(e)}", user, "SQL_SERVER_ERROR"
-            )
+            self.logger.error(f"SQL Server query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}")
+            try:
+                self.storage_manager._set_datasource(datasource)
+                self.storage_manager.store_rejected_query(
+                    datasource, nlq, schema, f"SQL Server query failed: {str(e)}", user, "SQL_SERVER_ERROR"
+                )
+            except Exception as store_e:
+                self.logger.error(f"Failed to store rejected query for schema {schema}, NLQ: {nlq}: {str(store_e)}")
             raise ExecutionError(f"SQL Server query execution failed: {str(e)}")
 
     def execute_query(
@@ -309,39 +340,53 @@ class DataExecutor:
         Raises:
             ExecutionError: If execution fails across all schemas.
         """
+        if not schemas:
+            self.logger.error(f"No schemas provided for query execution, NLQ: {nlq}")
+            raise ExecutionError("No schemas provided")
         try:
-            storage_manager = StorageManager(self.config_utils)
-            storage_manager._set_datasource(datasource)
-            sql_query = self._call_sql(system_prompt, prompt, datasource)
+            self.storage_manager._set_datasource(datasource)
+            sql_query = self._call_sql(system_prompt, prompt, datasource, schemas)
             if not sql_query:
-                self.logger.error(f"No SQL query generated for NLQ: {nlq}")
-                storage_manager.store_rejected_query(
-                    datasource, nlq, "No SQL query generated", user, "NO_SQL_GENERATED"
-                )
+                self.logger.error(f"No SQL query generated for NLQ: {nlq}, schemas: {schemas}")
+                try:
+                    self.storage_manager.store_rejected_query(
+                        datasource, nlq, schemas[0], "No SQL query generated", user, "NO_SQL_GENERATED"
+                    )
+                except Exception as store_e:
+                    self.logger.error(f"Failed to store rejected query for NLQ {nlq}: {str(store_e)}")
                 return None, None, None
             if datasource["type"] == "sqlserver":
-                results = self._execute_sql_server_query(sql_query, user, nlq, datasource)
+                results = self._execute_sql_server_query(sql_query, user, nlq, datasource, schemas[0])
             elif datasource["type"] == "s3":
                 results = self._execute_s3_query(sql_query, user, nlq, schemas, datasource, prediction)
             else:
-                self.logger.error(f"Unsupported datasource type: {datasource['type']}")
-                storage_manager.store_rejected_query(
-                    datasource, nlq, f"Unsupported datasource type: {datasource['type']}", user, "INVALID_DATASOURCE"
-                )
+                self.logger.error(f"Unsupported datasource type: {datasource['type']}, NLQ: {nlq}")
+                try:
+                    self.storage_manager.store_rejected_query(
+                        datasource, nlq, schemas[0], f"Unsupported datasource type: {datasource['type']}", user, "INVALID_DATASOURCE"
+                    )
+                except Exception as store_e:
+                    self.logger.error(f"Failed to store rejected query for NLQ {nlq}: {str(store_e)}")
                 raise ExecutionError(f"Unsupported datasource type: {datasource['type']}")
             if results[0] is None:
-                storage_manager.store_rejected_query(
-                    datasource, nlq, "No data returned", user, "NO_DATA"
-                )
+                try:
+                    self.storage_manager.store_rejected_query(
+                        datasource, nlq, schemas[0], "No data returned", user, "NO_DATA"
+                    )
+                except Exception as store_e:
+                    self.logger.error(f"Failed to store rejected query for NLQ {nlq}: {str(store_e)}")
             return results
         except ExecutionError as e:
-            self.logger.error(f"Failed to execute query for NLQ '{nlq}' on datasource {datasource['name']}: {str(e)}")
+            self.logger.error(f"Failed to execute query for NLQ '{nlq}' on datasource {datasource['name']}, schemas {schemas}: {str(e)}")
             raise
         except ConfigError as e:
-            self.logger.error(f"Configuration error for NLQ '{nlq}' on datasource {datasource['name']}: {str(e)}")
-            storage_manager.store_rejected_query(
-                datasource, nlq, f"Configuration error: {str(e)}", user, "CONFIG_ERROR"
-            )
+            self.logger.error(f"Configuration error for NLQ '{nlq}' on datasource {datasource['name']}, schemas {schemas}: {str(e)}")
+            try:
+                self.storage_manager.store_rejected_query(
+                    datasource, nlq, schemas[0], f"Configuration error: {str(e)}", user, "CONFIG_ERROR"
+                )
+            except Exception as store_e:
+                self.logger.error(f"Failed to store rejected query for NLQ {nlq}: {str(store_e)}")
             raise ExecutionError(f"Failed to execute query: {str(e)}")
 
     def close_connection(self):

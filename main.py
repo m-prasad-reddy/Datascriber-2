@@ -3,7 +3,7 @@ import sys
 import json
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 from config.utils import ConfigUtils, ConfigError
 from config.logging_setup import LoggingSetup
 from cli.interface import Interface
@@ -19,12 +19,15 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resou
 
 __version__ = "1.1.0"
 
-def validate_config(config_utils: ConfigUtils, logger) -> None:
-    """Validate required configuration files.
+def validate_config(config_utils: ConfigUtils, logger) -> dict:
+    """Validate and cache required configuration files.
 
     Args:
         config_utils (ConfigUtils): Configuration utility instance.
         logger: System logger.
+
+    Returns:
+        dict: Cached configurations.
 
     Raises:
         ConfigError: If validation fails.
@@ -37,6 +40,7 @@ def validate_config(config_utils: ConfigUtils, logger) -> None:
         "aws_config.json",
         "synonym_config.json"
     ]
+    cached_configs = {}
     for config_file in config_files:
         try:
             config_path = config_utils.config_dir / config_file
@@ -44,12 +48,15 @@ def validate_config(config_utils: ConfigUtils, logger) -> None:
                 logger.error(f"Missing configuration file: {config_file}")
                 raise ConfigError(f"Missing configuration file: {config_file}")
             with open(config_path, "r") as f:
-                json.load(f)
+                cached_configs[config_file] = json.load(f)
+            logger.debug(f"Validated configuration file: {config_file}")
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in {config_file}: {str(e)}")
             raise ConfigError(f"Invalid JSON in {config_file}: {str(e)}")
+    logger.debug("All configuration files validated successfully")
+    return cached_configs
 
-def initialize_components(config_utils: ConfigUtils, logger, datasource_name: Optional[str] = None):
+def initialize_components(config_utils: ConfigUtils, logger, datasource_name: Optional[str] = None) -> Tuple[DBManager, StorageManager, NLPProcessor, Orchestrator]:
     """Initialize core components.
 
     Args:
@@ -64,7 +71,8 @@ def initialize_components(config_utils: ConfigUtils, logger, datasource_name: Op
         ConfigError, DBError, StorageError, NLPError: If initialization fails.
     """
     try:
-        db_manager = DBManager(config_utils,logger)
+        logger.debug("Initializing core components")
+        db_manager = DBManager(config_utils, logger)
         storage_manager = StorageManager(config_utils, logger)
         nlp_processor = NLPProcessor(config_utils, logger)
         orchestrator = Orchestrator(config_utils, db_manager, storage_manager, nlp_processor, logger)
@@ -76,30 +84,40 @@ def initialize_components(config_utils: ConfigUtils, logger, datasource_name: Op
                 logger.error(f"Invalid datasource: {datasource_name}")
                 raise ConfigError(f"Invalid datasource: {datasource_name}")
             datasource = next(ds for ds in datasources if ds["name"] == datasource_name)
-            if datasource["type"] == "sqlserver":
-                db_manager.validate_metadata(datasource, datasource["connection"]["schemas"][0])
-            elif datasource["type"] == "s3":
-                storage_manager.validate_metadata(datasource, datasource["connection"]["schemas"][0])
+            schemas = datasource["connection"].get("schemas", ["default"])
+            for schema in schemas:
+                if datasource["type"] == "sqlserver":
+                    db_manager.validate_metadata(datasource, schema)
+                elif datasource["type"] == "s3":
+                    storage_manager.validate_metadata(datasource, schema)
+            logger.debug(f"Validated datasource {datasource_name} with schemas {schemas}")
 
+        logger.debug("Core components initialized successfully")
         return db_manager, storage_manager, nlp_processor, orchestrator
     except (ConfigError, DBError, StorageError, NLPError) as e:
         logger.error(f"Failed to initialize components: {str(e)}")
         raise
 
-def cleanup_components(db_manager: DBManager, storage_manager: StorageManager, nlp_processor: NLPProcessor, logger):
+def cleanup_components(db_manager: Optional[DBManager], storage_manager: Optional[StorageManager], nlp_processor: Optional[NLPProcessor], logger):
     """Cleanup resources.
 
     Args:
-        db_manager (DBManager): Database manager instance.
-        storage_manager (StorageManager): Storage manager instance.
-        nlp_processor (NLPProcessor): NLP processor instance.
+        db_manager (Optional[DBManager]): Database manager instance.
+        storage_manager (Optional[StorageManager]): Storage manager instance.
+        nlp_processor (Optional[NLPProcessor]): NLP processor instance.
         logger: System logger.
     """
     try:
-        db_manager.close_connections()
-        storage_manager.clear_cache()
-        nlp_processor.clear_cache()
-        logger.debug("Cleaned up resources")
+        if db_manager:
+            db_manager.close_connections()
+            logger.debug("Closed database connections")
+        if storage_manager:
+            storage_manager.clear_cache()
+            logger.debug("Cleared storage cache")
+        if nlp_processor:
+            nlp_processor.clear_cache()
+            logger.debug("Cleared NLP cache")
+        logger.debug("Resource cleanup completed successfully")
     except (DBError, StorageError, NLPError) as e:
         logger.error(f"Failed to cleanup resources: {str(e)}")
 
@@ -117,6 +135,11 @@ def main():
         print(f"Datascriber v{__version__}")
         sys.exit(0)
 
+    db_manager = None
+    storage_manager = None
+    nlp_processor = None
+    logger = None
+
     try:
         # Initialize ConfigUtils and LoggingSetup
         config_utils = ConfigUtils()
@@ -128,9 +151,10 @@ def main():
         logger.debug(f"Python: {sys.version}, Dependencies: {', '.join(f'{d.key}=={d.version}' for d in pkg_resources.working_set)}")
 
         # Validate configuration files
-        validate_config(config_utils, logger)
+        cached_configs = validate_config(config_utils, logger)
 
         # Initialize components
+        logger.debug(f"Starting in {args.mode} mode")
         db_manager, storage_manager, nlp_processor, orchestrator = initialize_components(
             config_utils, logger, args.datasource
         )
@@ -141,26 +165,27 @@ def main():
             cli = Interface(config_utils, orchestrator, logger)
             cli.run()
         elif args.mode == "batch":
-            logger.debug("Starting batch mode")
-            # Placeholder for batch processing
-            logger.info("Batch mode not implemented yet")
-            raise NotImplementedError("Batch mode is not implemented")
+            logger.info("Batch mode selected but not implemented")
+            raise NotImplementedError("Batch mode is not yet implemented. Use --mode cli instead.")
 
     except (ConfigError, DBError, StorageError, NLPError) as e:
-        logger.error(f"System error: {str(e)}")
+        if logger:
+            logger.error(f"System error: {str(e)}")
         print(f"Error: {str(e)}")
         sys.exit(1)
     except KeyboardInterrupt:
-        logger.info("User interrupted execution")
+        if logger:
+            logger.info("User interrupted execution")
         print("Exiting...")
+        sys.exit(0)
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        if logger:
+            logger.error(f"Unexpected error: {str(e)}")
         print(f"Unexpected error: {str(e)}")
         sys.exit(1)
     finally:
-        if 'db_manager' in locals():
+        if logger:
             cleanup_components(db_manager, storage_manager, nlp_processor, logger)
-        if 'logger' in locals():
             logger.info("Datascriber shutdown complete")
 
 if __name__ == "__main__":

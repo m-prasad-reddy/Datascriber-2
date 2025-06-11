@@ -5,9 +5,7 @@ from typing import Dict, List, Optional
 from pathlib import Path
 from datetime import datetime
 from config.utils import ConfigUtils, ConfigError
-from config.logging_setup import LoggingSetup
 from openai import AzureOpenAI
-import pickle
 from nlp.nlp_processor import NLPProcessor
 from storage.db_manager import DBManager
 
@@ -53,7 +51,7 @@ class TableIdentifier:
             self.confidence_threshold = model_config.get("confidence_threshold", 0.7)
             self.model_path = None
             self.loaded_model = None
-            self.logger.debug("Initialized TableIdentifier")
+            self.logger.debug(f"Initialized TableIdentifier with model_type={self.model_type}, model_name={self.model_name}, synonym_mode={self.synonym_mode}")
         except Exception as e:
             self.logger.error(f"Failed to initialize TableIdentifier: {str(e)}")
             raise TIAError(f"Failed to initialize TableIdentifier: {str(e)}")
@@ -90,8 +88,8 @@ class TableIdentifier:
             if config_path.exists():
                 with open(config_path, "r") as f:
                     config = json.load(f)
-                mode = config.get("synonym_mode", "static")
-                if mode not in ["static", "dynamic"]:
+                mode = config.get("synonym_mode", "default")
+                if mode not in ["static", "language", "dynamic"]:
                     self.logger.warning(f"Invalid synonym mode {mode}, defaulting to static")
                     return "static"
                 return mode
@@ -144,11 +142,11 @@ class TableIdentifier:
             self.logger.error(f"Failed to load model {self.model_path}: {str(e)}")
             raise TIAError(f"Failed to load model: {str(e)}")
 
-    def _get_metadata(self, schema: str) -> Dict:
-        """Fetch metadata for a schema.
+    def _get_metadata(self, schemas: List[str]) -> Dict:
+        """Fetch metadata for schemas.
 
         Args:
-            schema (str): Schema name.
+            schemas (List[str]): Schema names.
 
         Returns:
             Dict: Metadata dictionary.
@@ -160,10 +158,10 @@ class TableIdentifier:
             if not self.datasource:
                 self.logger.error("Datasource not set")
                 raise TIAError("Datasource not set")
-            metadata = self.config_utils.load_metadata(self.datasource["name"], schema)
+            metadata = self.config_utils.load_metadata(self.datasource["name"], schemas)
             return metadata
         except ConfigError as e:
-            self.logger.error(f"Failed to fetch metadata for schema {schema}: {str(e)}")
+            self.logger.error(f"Failed to fetch metadata for schemas {schemas}: {str(e)}")
             raise TIAError(f"Failed to fetch metadata: {str(e)}")
 
     def _load_synonyms(self, schema: str) -> Dict[str, List[str]]:
@@ -179,27 +177,27 @@ class TableIdentifier:
             TIAError: If synonym loading fails.
         """
         try:
-            metadata = self._get_metadata(schema)
+            metadata = self._get_metadata([schema])
             synonyms = {}
-            for table in metadata.get("tables", {}).values():
+            for table_name, table in metadata.get(schema, {}).get("tables", {}).items():
                 if "synonyms" in table:
-                    synonyms[table["name"]] = table["synonyms"]
+                    synonyms[table_name] = table["synonyms"]
                 for column in table.get("columns", []):
                     if "synonyms" in column:
-                        synonyms[f"{table['name']}.{column['name']}"] = column["synonyms"]
+                        synonyms[f"{table_name}.{column['name']}"] = column["synonyms"]
             self.logger.debug(f"Loaded synonyms for schema {schema}")
             return synonyms
         except TIAError as e:
             self.logger.error(f"Failed to load synonyms for schema {schema}: {str(e)}")
             raise
 
-    def identify_tables(self, datasource: Dict, nlq: str, schema: str = "default") -> Optional[Dict]:
+    def identify_tables(self, datasource: Dict, nlq: str, schemas: List[str]) -> Optional[Dict]:
         """Identify tables and columns for an NLQ.
 
         Args:
             datasource (Dict): Datasource configuration.
             nlq (str): Natural language query.
-            schema (str): Schema name, defaults to 'default'.
+            schemas (List[str]): Schema names.
 
         Returns:
             Optional[Dict]: Identification result or None if failed.
@@ -208,20 +206,28 @@ class TableIdentifier:
             TIAError: If identification fails critically.
         """
         self._set_datasource(datasource)
+        self.logger.debug(f"Identifying tables for NLQ '{nlq}' with schemas {schemas}")
         try:
+            if not schemas:
+                self.logger.error(f"No schemas provided for NLQ: {nlq}")
+                raise TIAError("No schemas provided")
+            nlp_processor = NLPProcessor(self.config_utils, self.logger)
             result = None
             if self.loaded_model:
-                result = self._predict_with_model(nlq, schema, NLPProcessor(self.config_utils, self.logger))
+                result = self._predict_with_model(nlq, schemas[0], nlp_processor)
             if not result:
-                result = self._predict_with_metadata(nlq, schema, NLPProcessor(self.config_utils, self.logger))
+                result = self._predict_with_mappings(nlq, schemas, nlp_processor)
             if result:
                 self.logger.info(f"Identification successful for NLQ: {nlq}")
                 return result
             self.logger.warning(f"No tables identified for NLQ: {nlq}")
-            db_manager = DBManager(self.config_utils)
-            db_manager.store_rejected_query(
-                datasource, nlq, "Unable to process request", "system", "TIA_FAILURE"
-            )
+            try:
+                db_manager = DBManager(self.config_utils, self.logger)
+                db_manager.store_rejected_query(
+                    datasource, nlq, schemas[0], "Unable to process request", "system", "TIA_ERROR"
+                )
+            except Exception as store_e:
+                self.logger.error(f"Failed to store rejected query for NLQ {nlq}: {str(store_e)}")
             return None
         except Exception as e:
             self.logger.error(f"Identification failed for NLQ '{nlq}': {str(e)}")
@@ -266,24 +272,26 @@ class TableIdentifier:
             self.logger.error(f"Model identification error for NLQ '{nlq}': {str(e)}")
             return None
 
-    def _predict_with_metadata(self, nlq: str, schema: str, nlp_processor: NLPProcessor) -> Optional[Dict]:
+    def _predict_with_mappings(self, nlq: str, schemas: List[str], nlp_processor: NLPProcessor) -> Optional[Dict]:
         """Identify using metadata and NLP.
 
         Args:
             nlq (str): Natural language query.
-            schema (str): Schema name.
+            schemas (List[str]): Schema names.
             nlp_processor (NLPProcessor): NLP processor instance.
 
         Returns:
             Optional[Dict]: Identification result or None.
         """
         try:
-            nlp_result = nlp_processor.process_query(nlq, schema, datasource=self.datasource)
+            nlp_result = nlp_processor.process_query(nlq, schemas[0], datasource=self.datasource)
             tokens = nlp_result.get("tokens", [])
             extracted_values = nlp_result.get("extracted_values", {})
             entities = nlp_result.get("entities", {})
-            metadata = self._get_metadata(schema)
-            synonyms = self._load_synonyms(schema)
+            metadata = self._get_metadata(schemas)
+            synonyms = {}
+            for schema in schemas:
+                synonyms.update(self._load_synonyms(schema))
             result = {
                 "tables": [],
                 "columns": [],
@@ -295,38 +303,46 @@ class TableIdentifier:
                 "sql": None
             }
             for token in tokens:
-                mapped_term = nlp_processor.map_synonyms(token, synonyms, schema, datasource=self.datasource)
-                for table in metadata.get("tables", {}).values():
-                    table_name = table["name"]
-                    table_synonyms = synonyms.get(table_name, [])
-                    if (mapped_term.lower() in table_name.lower() or
-                            any(mapped_term.lower() in s.lower() for s in table_synonyms)):
-                        if table_name not in result["tables"]:
-                            result["tables"].append(table_name)
+                mapped_term = nlp_processor.map_synonyms(token, synonyms, schemas[0], datasource=self.datasource)
+                for schema in schemas:
+                    schema_data = metadata.get(schema, {})
+                    for table_name, table in schema_data.get("tables", {}).items():
+                        table_synonyms = synonyms.get(table_name, [])
+                        if (mapped_term.lower() in table_name.lower() or
+                                any(mapped_term.lower() in s.lower() for s in table_synonyms)):
+                            full_table = f"{schema}.{table_name}"
+                            if full_table not in result["tables"]:
+                                result["tables"].append(full_table)
+                        for column in table.get("columns", []):
+                            col_name = column["name"]
+                            col_synonyms = synonyms.get(f"{table_name}.{col_name}", [])
+                            if (mapped_term.lower() in col_name.lower() or
+                                    any(mapped_term.lower() in s.lower() for s in col_synonyms)):
+                                full_col = f"{schema}.{table_name}.{col_name}"
+                                if full_col not in result["columns"]:
+                                    result["columns"].append(full_col)
+                            if "unique_values" in column:
+                                for value in column["unique_values"]:
+                                    if token.lower() == value.lower():
+                                        result["extracted_values"][f"{table_name}.{col_name}"] = value
+                                        if "?" not in result["placeholders"]:
+                                            result["placeholders"].append("?")
+            for schema in schemas:
+                schema_data = metadata.get(schema, {})
+                for table_name, table in schema_data.get("tables", {}).items():
                     for column in table.get("columns", []):
-                        col_name = column["name"]
-                        col_synonyms = synonyms.get(f"{table_name}.{col_name}", [])
-                        if (mapped_term.lower() in col_name.lower() or
-                                any(mapped_term.lower() in s.lower() for s in col_synonyms)):
-                            if col_name not in result["columns"]:
-                                result["columns"].append(col_name)
-                        if "unique_values" in column:
-                            for value in column["unique_values"]:
-                                if token.lower() == value.lower():
-                                    result["extracted_values"][col_name] = value
-                                    if "?" not in result["placeholders"]:
-                                        result["placeholders"].append("?")
-            for table in metadata.get("tables", {}).values():
-                for column in table.get("columns", []):
-                    if column.get("references"):
-                        ref_table = column["references"]["table"]
-                        ref_schema, ref_table_name = ref_table.split(".") if "." in ref_table else (schema, ref_table)
-                        if ref_table_name in result["tables"] and table["name"] not in result["tables"]:
-                            result["tables"].append(table["name"])
+                        if column.get("references"):
+                            ref_table = column["references"]["table"]
+                            ref_schema = schema if "." not in ref_table else ref_table.split(".")[0]
+                            ref_table_name = ref_table.split(".")[1] if "." in ref_table else ref_table
+                            full_ref_table = f"{ref_schema}.{ref_table_name}"
+                            full_table = f"{schema}.{table_name}"
+                            if full_ref_table in result["tables"] and full_table not in result["tables"]:
+                                result["tables"].append(full_table)
             if not result["tables"]:
-                self.logger.debug(f"No tables identified for NLQ: {nlq} in schema {schema}")
+                self.logger.debug(f"No tables identified for NLQ: {nlq} in schemas {schemas}")
                 return None
-            result["ddl"] = self._generate_ddl(result["tables"], schema)
+            result["ddl"] = self._generate_ddl([t.split(".")[1] for t in result["tables"]], schemas[0])
             self.logger.debug(f"Generated metadata-based identification for NLQ: {nlq}")
             return result
         except TIAError as e:
@@ -347,9 +363,17 @@ class TableIdentifier:
         """
         try:
             azure_config = self.config_utils.load_azure_config()
+            required_keys = ["api_key", "endpoint"]
+            missing_keys = [k for k in required_keys if k not in azure_config]
+            if missing_keys:
+                self.logger.error(f"Missing Azure configuration keys: {missing_keys}")
+                raise TIAError(f"Missing Azure configuration keys: {missing_keys}")
+            self.logger.debug(f"Initializing AzureOpenAI with endpoint={azure_config['endpoint']}, model={self.model_name}")
+            # Note: If proxies are required, set HTTP_PROXY/HTTPS_PROXY environment variables
+            # or pass a custom http_client, e.g., httpx.Client(proxies="http://proxy.example.com:8080")
             client = AzureOpenAI(
                 api_key=azure_config["api_key"],
-                api_version="2023-10-01-preview",
+                api_version="2023-12-01-preview",
                 azure_endpoint=azure_config["endpoint"]
             )
             if isinstance(text, str):
@@ -373,13 +397,16 @@ class TableIdentifier:
             str: DDL string.
         """
         try:
-            metadata = self._get_metadata(schema)
+            metadata = self._get_metadata([schema])
             ddl_parts = []
             for table in tables:
-                for meta_table in metadata.get("tables", {}).values():
-                    if meta_table["name"] == table:
-                        columns = [f"{col['name']} {col['type']}" for col in meta_table.get("columns", [])]
-                        ddl_parts.append(f"CREATE TABLE {schema}.{table} ({', '.join(columns)});")
+                table_data = metadata.get(schema, {}).get("tables", {}).get(table, {})
+                if not table_data:
+                    self.logger.warning(f"No metadata found for table {table} in schema {schema}")
+                    continue
+                columns = [f"{col['name']} {col['type']}" for col in table_data.get("columns", [])]
+                if columns:
+                    ddl_parts.append(f"CREATE TABLE {schema}.{table} ({', '.join(columns)});")
             return "\n".join(ddl_parts)
         except TIAError:
             self.logger.warning(f"Failed to generate DDL for tables {tables}")
@@ -418,7 +445,7 @@ class TableIdentifier:
             Optional[str]: SQL query or None.
         """
         try:
-            training_data = DBManager(self.config_utils).get_training_data(self.datasource)
+            training_data = DBManager(self.config_utils, self.logger).get_training_data(self.datasource)
             for row in training_data:
                 if row["user_query"] == query:
                     return row["relevant_sql"]
@@ -463,7 +490,7 @@ class TableIdentifier:
             "SCENARIO_ID": self._get_next_scenario_id()
         }
         try:
-            db_manager = DBManager(self.config_utils)
+            db_manager = DBManager(self.config_utils, self.logger)
             db_manager.store_training_data(self.datasource, [training_data])
             self.logger.info(f"Stored manual training data for NLQ: {nlq}")
         except Exception as e:
@@ -499,7 +526,7 @@ class TableIdentifier:
                 data["SCENARIO_ID"] = self._get_next_scenario_id()
                 processed_data.append(data)
             if processed_data:
-                db_manager = DBManager(self.config_utils)
+                db_manager = DBManager(self.config_utils, self.logger)
                 db_manager.store_training_data(self.datasource, processed_data)
                 self.logger.info(f"Stored {len(processed_data)} bulk training records")
         except Exception as e:
@@ -513,8 +540,8 @@ class TableIdentifier:
             int: Next SCENARIO_ID.
         """
         try:
-            training_data = DBManager(self.config_utils).get_training_data(self.datasource)
-            scenario_ids = [int(row["scenario_id"]) for row in training_data if row.get("scenario_id")]
+            training_data = DBManager(self.config_utils, self.logger).get_training_data(self.datasource)
+            scenario_ids = [int(row["SCENARIO_ID"]) for row in training_data if row.get("SCENARIO_ID")]
             return max(scenario_ids) + 1 if scenario_ids else 1
         except Exception as e:
             self.logger.error(f"Failed to retrieve scenario ID: {str(e)}")
@@ -552,7 +579,7 @@ class TableIdentifier:
                 "recall": 0.0,
                 "nlq_breakdown": {q: {"precision": [], "recall": []} for q in queries}
             }
-            db_manager = DBManager(self.config_utils)
+            db_manager = DBManager(self.config_utils, self.logger)
             db_manager.store_model_metrics(self.datasource, metrics)
             self._load_model()
         except Exception as e:
@@ -580,11 +607,11 @@ class TableIdentifier:
             with open(self.model_path, "w") as f:
                 json.dump(model_data, f, indent=2)
             self.logger.info(f"Generated default model at {self.model_path}")
-            db_manager = DBManager(self.config_utils)
+            db_manager = DBManager(self.config_utils, self.logger)
             metrics = {
                 "model_version": datetime.now().strftime("%Y%m%d%H%M%S"),
                 "precision": 0.0,
-                "recall": [],
+                "recall": 0.0,
                 "nlq_breakdown": {}
             }
             db_manager.store_model_metrics(self.datasource, metrics)

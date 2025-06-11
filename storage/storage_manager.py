@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+import re
 from typing import Dict, List, Optional
 from pathlib import Path
 import logging
@@ -9,6 +10,7 @@ import pyarrow.parquet as pq
 import pyarrow.orc as orc
 from io import BytesIO
 from config.utils import ConfigUtils, ConfigError
+from storage.db_manager import DBManager
 
 class StorageError(Exception):
     """Custom exception for storage-related errors."""
@@ -56,7 +58,7 @@ class StorageManager:
             self.orc_pattern = None
             self.table_cache = {}
             self.logger.debug("Initialized StorageManager")
-        except ConfigError as e:
+        except Exception as e:
             self.logger.error(f"Failed to initialize StorageManager: {str(e)}")
             raise StorageError(f"Failed to initialize StorageManager: {str(e)}")
 
@@ -89,26 +91,29 @@ class StorageManager:
         self.orc_pattern = datasource["connection"].get("orc_pattern", r"^data_")
         self._init_s3_client()
         self._detect_datasource_file_type()
-        self._clean_invalid_metadata()
+        self._clean_invalid_metadata(datasource["name"])
         self.logger.info(f"Set S3 datasource: {datasource['name']} with file type: {self.file_type}")
 
-    def _clean_invalid_metadata(self) -> None:
-        """Remove metadata files not matching configured schemas."""
+    def _clean_invalid_metadata(self, datasource_name: str) -> None:
+        """Remove metadata files not matching configured schemas.
+
+        Args:
+            datasource_name (str): Name of the datasource.
+        """
         try:
-            datasource_name = self.datasource["name"]
             valid_schemas = self.datasource["connection"].get("schemas", ["default"])
             data_dir = self.config_utils.get_datasource_data_dir(datasource_name)
             for file_path in data_dir.glob("metadata_data_*.json"):
                 schema = file_path.stem.replace("metadata_data_", "")
                 if schema not in valid_schemas:
-                    self.logger.warning(f"Removing invalid metadata file for schema: {schema} at {file_path}")
+                    self.logger.warning(f"Removing invalid metadata file for schema {schema} at {file_path}")
                     file_path.unlink(missing_ok=True)
                 rich_path = file_path.parent / f"metadata_data_{schema}_rich.json"
                 if rich_path.exists():
-                    self.logger.warning(f"Removing invalid rich metadata file: {rich_path}")
+                    self.logger.warning(f"Removing invalid rich metadata file for schema {schema} at {rich_path}")
                     rich_path.unlink(missing_ok=True)
         except Exception as e:
-            self.logger.error(f"Failed to clean invalid metadata files: {str(e)}")
+            self.logger.error(f"Failed to clean invalid metadata files for datasource {datasource_name}: {str(e)}")
 
     def _init_s3_client(self) -> None:
         """Initialize S3 client.
@@ -125,6 +130,8 @@ class StorageManager:
             if aws_config.get("aws_access_key_id") and aws_config.get("aws_secret_access_key"):
                 session_params["aws_access_key_id"] = aws_config["aws_access_key_id"]
                 session_params["aws_secret_access_key"] = aws_config["aws_secret_access_key"]
+            else:
+                self.logger.warning("No AWS credentials provided; using default credentials")
             session = boto3.Session(**session_params)
             self.s3_client = session.client("s3")
             for attempt in range(3):
@@ -133,7 +140,7 @@ class StorageManager:
                     break
                 except ClientError as e:
                     if attempt == 2:
-                        self.logger.error(f"Failed to connect to S3 bucket after 3 attempts: {str(e)}")
+                        self.logger.error(f"Failed to connect to S3 bucket {self.bucket_name} after 3 attempts: {str(e)}")
                         raise StorageError(f"Failed to initialize S3 client: {str(e)}")
             self.logger.debug(f"Connected to S3 bucket: {self.bucket_name}")
         except ClientError as e:
@@ -207,8 +214,31 @@ class StorageManager:
                     self.logger.debug(f"No single file found at {file_key}")
             return part_files
         except ClientError as e:
-            self.logger.error(f"Failed to list part files for {table}: {str(e)}")
+            self.logger.error(f"Failed to list part files for table {table}: {str(e)}")
             raise StorageError(f"Failed to list part files: {str(e)}")
+
+    def store_rejected_query(self, datasource: Dict, query: str, schema: str, reason: str, user: str, error_type: str) -> None:
+        """Store rejected query in SQLite via DBManager.
+
+        Args:
+            datasource (Dict): Datasource configuration.
+            query (str): Rejected query or NLQ.
+            schema (str): Schema name.
+            reason (str): Reason for rejection.
+            user (str): User submitting the query.
+            error_type (str): Type of error (e.g., NO_DATA, PANDAS_SQL_ERROR).
+
+        Raises:
+            StorageError: If storage fails.
+        """
+        try:
+            self._set_datasource(datasource)
+            db_manager = DBManager(self.config_utils, self.logger)
+            db_manager.store_rejected_query(datasource, query, schema, reason, user, error_type)
+            self.logger.debug(f"Stored rejected query for schema {schema}, user {user}, error_type {error_type}: {reason}")
+        except Exception as e:
+            self.logger.error(f"Failed to store rejected query for schema {schema}, NLQ '{query}': {str(e)}")
+            raise StorageError(f"Failed to store rejected query: {str(e)}")
 
     def fetch_metadata(self, datasource: Dict, schema: str) -> bool:
         """Fetch metadata from S3 bucket.
@@ -319,7 +349,7 @@ class StorageManager:
                 json.dump(rich_metadata, f, indent=2)
             self.logger.info(f"Generated rich metadata for schema {schema} to {rich_metadata_path}")
             return bool(metadata["tables"])
-        except (ClientError, json.JSONEncodeError, ConfigError) as e:
+        except Exception as e:
             self.logger.error(f"Failed to fetch S3 metadata for schema {schema} in {datasource['name']}: {str(e)}")
             raise StorageError(f"Failed to fetch S3 metadata: {str(e)}")
 
