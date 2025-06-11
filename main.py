@@ -64,22 +64,14 @@ def initialize_components(config_utils: ConfigUtils, logger, datasource_name: Op
         ConfigError, DBError, StorageError, NLPError: If initialization fails.
     """
     try:
-        db_manager = DBManager(config_utils)
-        logger.debug("Initialized DBManager")
-        
-        storage_manager = StorageManager(config_utils)
-        logger.debug("Initialized StorageManager")
-        
-        nlp_processor = NLPProcessor(config_utils, logger)  # Added logger argument
-        logger.debug("Initialized NLPProcessor")
-        
-        # Temporary fix: Pass only config_utils until orchestrator.py is fixed
-        orchestrator = Orchestrator(config_utils)  # TODO: Update to pass db_manager, storage_manager, nlp_processor after fixing orchestrator.py
-        logger.debug("Initialized Orchestrator")
+        db_manager = DBManager(config_utils,logger)
+        storage_manager = StorageManager(config_utils, logger)
+        nlp_processor = NLPProcessor(config_utils, logger)
+        orchestrator = Orchestrator(config_utils, db_manager, storage_manager, nlp_processor, logger)
 
         # Validate datasource if specified
         if datasource_name:
-            datasources = config_utils.load_db_config().get("datasources", [])
+            datasources = config_utils.load_db_configurations().get("datasources", [])
             if not any(ds["name"] == datasource_name for ds in datasources):
                 logger.error(f"Invalid datasource: {datasource_name}")
                 raise ConfigError(f"Invalid datasource: {datasource_name}")
@@ -146,8 +138,8 @@ def main():
         # Run in specified mode
         if args.mode == "cli":
             logger.debug("Starting CLI mode")
-            cli = Interface(config_utils, orchestrator)
-            cli.run(datasource=args.datasource, schema=args.schema)
+            cli = Interface(config_utils, orchestrator, logger)
+            cli.run()
         elif args.mode == "batch":
             logger.debug("Starting batch mode")
             # Placeholder for batch processing

@@ -1,4 +1,5 @@
 import json
+import logging
 import numpy as np
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -7,6 +8,8 @@ from config.utils import ConfigUtils, ConfigError
 from config.logging_setup import LoggingSetup
 from openai import AzureOpenAI
 import pickle
+from nlp.nlp_processor import NLPProcessor
+from storage.db_manager import DBManager
 
 class TIAError(Exception):
     """Custom exception for Table Identifier Agent errors."""
@@ -29,19 +32,19 @@ class TableIdentifier:
         loaded_model (Optional[Dict]): Loaded model data.
     """
 
-    def __init__(self, config_utils: ConfigUtils):
+    def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
         """Initialize TableIdentifier.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
+            logger (logging.Logger): System logger.
 
         Raises:
             TIAError: If initialization fails.
         """
         self.config_utils = config_utils
+        self.logger = logger
         try:
-            self.logging_setup = LoggingSetup.get_instance(self.config_utils)
-            self.logger = self.logging_setup.get_logger("tia", "system")
             self.datasource = None
             self.synonym_mode = self._load_synonym_mode()
             model_config = self._load_model_config()
@@ -52,6 +55,7 @@ class TableIdentifier:
             self.loaded_model = None
             self.logger.debug("Initialized TableIdentifier")
         except Exception as e:
+            self.logger.error(f"Failed to initialize TableIdentifier: {str(e)}")
             raise TIAError(f"Failed to initialize TableIdentifier: {str(e)}")
 
     def _set_datasource(self, datasource: Dict) -> None:
@@ -68,7 +72,7 @@ class TableIdentifier:
             self.logger.error("Missing required keys in datasource configuration")
             raise TIAError("Missing required keys")
         self.datasource = datasource
-        self.model_path = self.config_utils.models_dir / f"model_{datasource['name']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.json"
+        self.model_path = self.config_utils.models_dir / f"model_{datasource['name']}.json"
         self._load_model()
         self.logger.debug(f"Set datasource: {datasource['name']}")
 
@@ -189,8 +193,8 @@ class TableIdentifier:
             self.logger.error(f"Failed to load synonyms for schema {schema}: {str(e)}")
             raise
 
-    def predict_tables(self, datasource: Dict, nlq: str, schema: str = "default") -> Optional[Dict]:
-        """Predict tables and columns for an NLQ.
+    def identify_tables(self, datasource: Dict, nlq: str, schema: str = "default") -> Optional[Dict]:
+        """Identify tables and columns for an NLQ.
 
         Args:
             datasource (Dict): Datasource configuration.
@@ -198,39 +202,33 @@ class TableIdentifier:
             schema (str): Schema name, defaults to 'default'.
 
         Returns:
-            Optional[Dict]: Prediction result or None if failed.
+            Optional[Dict]: Identification result or None if failed.
 
         Raises:
-            TIAError: If prediction fails critically.
+            TIAError: If identification fails critically.
         """
         self._set_datasource(datasource)
         try:
-            from nlp.nlp_processor import NLPProcessor
-            nlp_processor = NLPProcessor(self.config_utils)
             result = None
             if self.loaded_model:
-                result = self._predict_with_model(nlq, schema, nlp_processor)
+                result = self._predict_with_model(nlq, schema, NLPProcessor(self.config_utils, self.logger))
             if not result:
-                result = self._predict_with_metadata(nlq, schema, nlp_processor)
+                result = self._predict_with_metadata(nlq, schema, NLPProcessor(self.config_utils, self.logger))
             if result:
-                self.logger.info(f"Prediction successful for NLQ: {nlq}")
+                self.logger.info(f"Identification successful for NLQ: {nlq}")
                 return result
-            self.logger.warning(f"No tables predicted for NLQ: {nlq}")
-            from storage.db_manager import DBManager
+            self.logger.warning(f"No tables identified for NLQ: {nlq}")
             db_manager = DBManager(self.config_utils)
             db_manager.store_rejected_query(
                 datasource, nlq, "Unable to process request", "system", "TIA_FAILURE"
             )
             return None
-        except ImportError as e:
-            self.logger.error(f"Failed to import NLPProcessor: {str(e)}")
-            raise TIAError(f"Prediction failed: {str(e)}")
         except Exception as e:
-            self.logger.error(f"Prediction failed for NLQ '{nlq}': {str(e)}")
-            raise TIAError(f"Prediction failed: {str(e)}")
+            self.logger.error(f"Identification failed for NLQ '{nlq}': {str(e)}")
+            raise TIAError(f"Identification failed: {str(e)}")
 
-    def _predict_with_model(self, nlq: str, schema: str, nlp_processor: 'NLPProcessor') -> Optional[Dict]:
-        """Predict using model embeddings.
+    def _predict_with_model(self, nlq: str, schema: str, nlp_processor: NLPProcessor) -> Optional[Dict]:
+        """Identify using model embeddings.
 
         Args:
             nlq (str): Natural language query.
@@ -238,7 +236,7 @@ class TableIdentifier:
             nlp_processor (NLPProcessor): NLP processor instance.
 
         Returns:
-            Optional[Dict]: Prediction result or None.
+            Optional[Dict]: Identification result or None.
         """
         try:
             nlq_embedding = self._encode_query(nlq)
@@ -251,7 +249,7 @@ class TableIdentifier:
                 query = self.loaded_model["queries"][max_sim_idx]
                 tables = self.loaded_model["tables"][max_sim_idx]
                 columns = self.loaded_model["columns"][max_sim_idx]
-                nlp_result = nlp_processor.process_query(nlq, schema)
+                nlp_result = nlp_processor.process_query(nlq, schema, datasource=self.datasource)
                 return {
                     "tables": tables,
                     "columns": columns,
@@ -265,11 +263,11 @@ class TableIdentifier:
             self.logger.debug(f"Model confidence too low: {max_sim_score} for NLQ: {nlq}")
             return None
         except (ValueError, TypeError) as e:
-            self.logger.error(f"Model prediction error for NLQ '{nlq}': {str(e)}")
+            self.logger.error(f"Model identification error for NLQ '{nlq}': {str(e)}")
             return None
 
-    def _predict_with_metadata(self, nlq: str, schema: str, nlp_processor: 'NLPProcessor') -> Optional[Dict]:
-        """Predict using metadata and NLP.
+    def _predict_with_metadata(self, nlq: str, schema: str, nlp_processor: NLPProcessor) -> Optional[Dict]:
+        """Identify using metadata and NLP.
 
         Args:
             nlq (str): Natural language query.
@@ -277,10 +275,10 @@ class TableIdentifier:
             nlp_processor (NLPProcessor): NLP processor instance.
 
         Returns:
-            Optional[Dict]: Prediction result or None.
+            Optional[Dict]: Identification result or None.
         """
         try:
-            nlp_result = nlp_processor.process_query(nlq, schema)
+            nlp_result = nlp_processor.process_query(nlq, schema, datasource=self.datasource)
             tokens = nlp_result.get("tokens", [])
             extracted_values = nlp_result.get("extracted_values", {})
             entities = nlp_result.get("entities", {})
@@ -297,7 +295,7 @@ class TableIdentifier:
                 "sql": None
             }
             for token in tokens:
-                mapped_term = nlp_processor.map_synonyms(token, synonyms, schema)
+                mapped_term = nlp_processor.map_synonyms(token, synonyms, schema, datasource=self.datasource)
                 for table in metadata.get("tables", {}).values():
                     table_name = table["name"]
                     table_synonyms = synonyms.get(table_name, [])
@@ -329,10 +327,10 @@ class TableIdentifier:
                 self.logger.debug(f"No tables identified for NLQ: {nlq} in schema {schema}")
                 return None
             result["ddl"] = self._generate_ddl(result["tables"], schema)
-            self.logger.debug(f"Generated metadata-based prediction for NLQ: {nlq}")
+            self.logger.debug(f"Generated metadata-based identification for NLQ: {nlq}")
             return result
         except TIAError as e:
-            self.logger.error(f"Metadata prediction error for NLQ '{nlq}': {str(e)}")
+            self.logger.error(f"Metadata identification error for NLQ '{nlq}': {str(e)}")
             return None
 
     def _encode_query(self, text: str | List[str]) -> np.ndarray:
@@ -351,7 +349,7 @@ class TableIdentifier:
             azure_config = self.config_utils.load_azure_config()
             client = AzureOpenAI(
                 api_key=azure_config["api_key"],
-                api_version="2023-05-15",
+                api_version="2023-10-01-preview",
                 azure_endpoint=azure_config["endpoint"]
             )
             if isinstance(text, str):
@@ -420,15 +418,13 @@ class TableIdentifier:
             Optional[str]: SQL query or None.
         """
         try:
-            from storage.db_manager import DBManager
-            db_manager = DBManager(self.config_utils)
-            training_data = db_manager.get_training_data(self.datasource)
+            training_data = DBManager(self.config_utils).get_training_data(self.datasource)
             for row in training_data:
                 if row["user_query"] == query:
                     return row["relevant_sql"]
             return None
-        except ImportError as e:
-            self.logger.error(f"Failed to import DBManager: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve stored SQL: {str(e)}")
             return None
 
     def train_manual(self, datasource: Dict, nlq: str, tables: List[str], columns: List[str], extracted_values: Dict, placeholders: List[str], sql: str) -> None:
@@ -467,12 +463,11 @@ class TableIdentifier:
             "SCENARIO_ID": self._get_next_scenario_id()
         }
         try:
-            from storage.db_manager import DBManager
             db_manager = DBManager(self.config_utils)
             db_manager.store_training_data(self.datasource, [training_data])
             self.logger.info(f"Stored manual training data for NLQ: {nlq}")
-        except ImportError as e:
-            self.logger.error(f"Failed to import DBManager: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to store training data: {str(e)}")
             raise TIAError(f"Failed to store training data: {str(e)}")
 
     def train_bulk(self, datasource: Dict, training_data: List[Dict]) -> None:
@@ -487,8 +482,6 @@ class TableIdentifier:
         """
         self._set_datasource(datasource)
         try:
-            from storage.db_manager import DBManager
-            db_manager = DBManager(self.config_utils)
             processed_data = []
             for data in training_data[:100]:  # Limit to 100 rows
                 if not all(key in data for key in ["user_query", "related_tables", "specific_columns", "relevant_sql"]):
@@ -506,10 +499,11 @@ class TableIdentifier:
                 data["SCENARIO_ID"] = self._get_next_scenario_id()
                 processed_data.append(data)
             if processed_data:
+                db_manager = DBManager(self.config_utils)
                 db_manager.store_training_data(self.datasource, processed_data)
                 self.logger.info(f"Stored {len(processed_data)} bulk training records")
-        except ImportError as e:
-            self.logger.error(f"Failed to import DBManager: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to store bulk training data: {str(e)}")
             raise TIAError(f"Failed to store bulk training data: {str(e)}")
 
     def _get_next_scenario_id(self) -> int:
@@ -519,13 +513,11 @@ class TableIdentifier:
             int: Next SCENARIO_ID.
         """
         try:
-            from storage.db_manager import DBManager
-            db_manager = DBManager(self.config_utils)
-            training_data = db_manager.get_training_data(self.datasource)
+            training_data = DBManager(self.config_utils).get_training_data(self.datasource)
             scenario_ids = [int(row["scenario_id"]) for row in training_data if row.get("scenario_id")]
             return max(scenario_ids) + 1 if scenario_ids else 1
-        except ImportError as e:
-            self.logger.error(f"Failed to import DBManager: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve scenario ID: {str(e)}")
             return 1
 
     def train(self, datasource: Dict, training_data: List[Dict]) -> None:
@@ -554,17 +546,16 @@ class TableIdentifier:
             with open(self.model_path, "w") as f:
                 json.dump(model_data, f, indent=2)
             self.logger.info(f"Trained model and saved at {self.model_path}")
-            from storage.db_manager import DBManager
-            db_manager = DBManager(self.config_utils)
             metrics = {
                 "model_version": datetime.now().strftime("%Y%m%d%H%M%S"),
                 "precision": 0.0,  # Placeholder for actual computation
                 "recall": 0.0,
-                "nlq_breakdown": {q: {"precision": 0.0, "recall": 0.0} for q in queries}
+                "nlq_breakdown": {q: {"precision": [], "recall": []} for q in queries}
             }
+            db_manager = DBManager(self.config_utils)
             db_manager.store_model_metrics(self.datasource, metrics)
             self._load_model()
-        except (json.JSONDecodeError, ValueError) as e:
+        except Exception as e:
             self.logger.error(f"Failed to train model: {str(e)}")
             raise TIAError(f"Failed to train model: {str(e)}")
 
@@ -589,16 +580,15 @@ class TableIdentifier:
             with open(self.model_path, "w") as f:
                 json.dump(model_data, f, indent=2)
             self.logger.info(f"Generated default model at {self.model_path}")
-            from storage.db_manager import DBManager
             db_manager = DBManager(self.config_utils)
             metrics = {
                 "model_version": datetime.now().strftime("%Y%m%d%H%M%S"),
                 "precision": 0.0,
-                "recall": 0.0,
+                "recall": [],
                 "nlq_breakdown": {}
             }
             db_manager.store_model_metrics(self.datasource, metrics)
             self._load_model()
-        except json.JSONDecodeError as e:
+        except Exception as e:
             self.logger.error(f"Failed to generate default model: {str(e)}")
             raise TIAError(f"Failed to generate default model: {str(e)}")

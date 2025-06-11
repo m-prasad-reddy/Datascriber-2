@@ -1,7 +1,10 @@
 import json
 from typing import Dict, List, Optional
+import logging
 from config.utils import ConfigUtils, ConfigError
-from config.logging_setup import LoggingSetup
+from storage.storage_manager import StorageManager
+from nlp.nlp_processor import NLPProcessor
+from storage.db_manager import DBManager
 
 class PromptError(Exception):
     """Custom exception for prompt generation errors."""
@@ -19,22 +22,23 @@ class PromptGenerator:
         llm_config (Dict): LLM configuration from llm_config.json.
     """
 
-    def __init__(self, config_utils: ConfigUtils):
+    def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
         """Initialize PromptGenerator.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
+            logger (logging.Logger): System logger.
 
         Raises:
             PromptError: If initialization fails.
         """
         self.config_utils = config_utils
+        self.logger = logger
         try:
-            self.logging_setup = LoggingSetup.get_instance(self.config_utils)
-            self.logger = self.logging_setup.get_logger("prompt_generator", "system")
             self.llm_config = self._load_llm_config()
             self.logger.debug("Initialized PromptGenerator")
         except ConfigError as e:
+            self.logger.error(f"Failed to initialize PromptGenerator: {str(e)}")
             raise PromptError(f"Failed to initialize PromptGenerator: {str(e)}")
 
     def _load_llm_config(self) -> Dict:
@@ -50,18 +54,18 @@ class PromptGenerator:
             config_path = self.config_utils.config_dir / "llm_config.json"
             with open(config_path, "r") as f:
                 config = json.load(f)
-            self.logger.debug("Loaded llm_config.json")
+            self.logger.debug(f"Loaded LLM configuration from {config_path}")
             return config
         except (json.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"Failed to load llm_config.json: {str(e)}")
             raise PromptError(f"Failed to load llm_config.json: {str(e)}")
 
-    def generate_system_prompt(self, datasource: Dict, schema: str) -> str:
-        """Generate system prompt for LLM.
+    def generate_system_prompt(self, datasource: Dict, schemas: List[str]) -> str:
+        """Generate system prompt for LLM across multiple schemas.
 
         Args:
             datasource (Dict): Datasource configuration.
-            schema (str): Schema name.
+            schemas (List[str]): List of schema names.
 
         Returns:
             str: System prompt.
@@ -70,27 +74,41 @@ class PromptGenerator:
             PromptError: If generation fails.
         """
         try:
+            storage_manager = StorageManager(self.config_utils)
+            storage_manager._set_datasource(datasource)
             base_prompt = self.llm_config["prompt_settings"]["system_prompt"]
-            metadata = self._get_metadata(datasource, schema)
             file_type = datasource["type"]
             if file_type == "s3":
-                from storage.storage_manager import StorageManager
-                storage_manager = StorageManager(self.config_utils)
-                storage_manager._set_datasource(datasource)
                 file_type = storage_manager.file_type or "unknown"
             prompt = (
                 f"{base_prompt}\n"
                 f"Datasource: {datasource['name']} ({file_type})\n"
-                f"Schema: {schema}\n"
-                f"Metadata: {json.dumps(metadata, indent=2)}\n"
+            )
+            for schema in schemas:
+                try:
+                    metadata = self._get_metadata(datasource, schema)
+                    prompt += (
+                        f"Schema: {schema}\n"
+                        f"Metadata: {json.dumps(metadata, indent=2)}\n"
+                    )
+                except PromptError as e:
+                    self.logger.warning(f"Skipping schema {schema} due to metadata error: {str(e)}")
+                    storage_manager.store_rejected_query(
+                        datasource, "", f"No metadata for schema {schema}", "system", "NO_METADATA"
+                    )
+                    continue
+            prompt += (
                 f"{'Use pandasql for S3 queries. ' if datasource['type'] == 's3' else ''}"
                 f"Use EXTRACT(YEAR FROM column) for dates, LOWER and LIKE for strings, "
                 f"SUM and AVG for numerics. Ensure SQL is valid for {file_type}."
             )
-            self.logger.debug(f"Generated system prompt for schema {schema}")
+            self.logger.debug(f"Generated system prompt for schemas {schemas}")
             return prompt
         except (KeyError, json.JSONDecodeError) as e:
-            self.logger.error(f"Failed to generate system prompt: {str(e)}")
+            self.logger.error(f"Failed to generate system prompt for schemas {schemas}: {str(e)}")
+            storage_manager.store_rejected_query(
+                datasource, "", f"System prompt generation failed: {str(e)}", "system", "PROMPT_ERROR"
+            )
             raise PromptError(f"Failed to generate system prompt: {str(e)}")
 
     def _get_metadata(self, datasource: Dict, schema: str) -> Dict:
@@ -107,20 +125,20 @@ class PromptGenerator:
             PromptError: If metadata fetching fails.
         """
         try:
-            metadata = self.config_utils.load_metadata(datasource["name"], schema)
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
             self.logger.debug(f"Fetched metadata for schema {schema} in datasource {datasource['name']}")
             return metadata
         except ConfigError as e:
             self.logger.error(f"Failed to fetch metadata for schema {schema}: {str(e)}")
             raise PromptError(f"Failed to fetch metadata: {str(e)}")
 
-    def generate_user_prompt(self, datasource: Dict, nlq: str, schema: str, entities: Optional[Dict] = None, prediction: Optional[Dict] = None) -> str:
-        """Generate user prompt for LLM.
+    def generate_user_prompt(self, datasource: Dict, nlq: str, schemas: List[str], entities: Optional[Dict] = None, prediction: Optional[Dict] = None) -> str:
+        """Generate user prompt for LLM across multiple schemas.
 
         Args:
             datasource (Dict): Datasource configuration.
             nlq (str): Natural language query.
-            schema (str): Schema name.
+            schemas (List[str]): List of schema names.
             entities (Optional[Dict]): Extracted entities (dates, names, objects, places).
             prediction (Optional[Dict]): Prediction result from TableIdentifier.
 
@@ -131,40 +149,62 @@ class PromptGenerator:
             PromptError: If generation fails.
         """
         try:
-            from nlp.nlp_processor import NLPProcessor
-            nlp_processor = NLPProcessor(self.config_utils)
-            entities = entities or nlp_processor.process_query(nlq, schema).get("entities", {})
-            metadata = self._get_metadata(datasource, schema)
+            storage_manager = StorageManager(self.config_utils)
+            storage_manager._set_datasource(datasource)
+            nlp_processor = NLPProcessor(self.config_utils, self.logger)
+            entities = entities or nlp_processor.process_query(nlq, schemas[0], datasource=datasource).get("entities", {})
             prediction = prediction or {}
-            context = self._build_context(entities, schema, datasource, metadata, prediction)
             prompt = (
                 f"User Query: {nlq}\n"
-                f"Schema: {schema}\n"
+                f"Schemas: {', '.join(schemas)}\n"
                 f"Datasource: {datasource['name']}\n"
                 f"Entities: {json.dumps(entities, indent=2)}\n"
                 f"Prediction: {json.dumps(prediction, indent=2)}\n"
-                f"Metadata: {json.dumps(metadata, indent=2)}\n"
-                f"Context: {context}\n"
+            )
+            max_length = self.llm_config["prompt_settings"]["max_prompt_length"]
+            metadata_added = False
+            for schema in schemas:
+                try:
+                    metadata = self._get_metadata(datasource, schema)
+                    context = self._build_context(entities, schema, datasource, metadata, prediction)
+                    schema_prompt = (
+                        f"Schema: {schema}\n"
+                        f"Metadata: {json.dumps(metadata, indent=2)}\n"
+                        f"Context: {context}\n"
+                    )
+                    if len(prompt + schema_prompt) <= max_length:
+                        prompt += schema_prompt
+                        metadata_added = True
+                    else:
+                        self.logger.warning(f"Skipping metadata for schema {schema} due to length limit")
+                except PromptError as e:
+                    self.logger.warning(f"Skipping schema {schema} due to metadata error: {str(e)}")
+                    storage_manager.store_rejected_query(
+                        datasource, nlq, f"No metadata for schema {schema}", "system", "NO_METADATA"
+                    )
+                    continue
+            prompt += (
                 f"Generate a valid SQL query for the {datasource['type']} datasource. "
                 f"{'Use pandasql for S3 queries. ' if datasource['type'] == 's3' else ''}"
                 f"Use EXTRACT(YEAR FROM column) for dates, LOWER and LIKE for strings, "
                 f"SUM and AVG for numerics."
             )
-            max_length = self.llm_config["prompt_settings"]["max_prompt_length"]
-            if len(prompt) > max_length:
-                self.logger.warning("Prompt exceeds max length, prioritizing metadata")
-                metadata_str = json.dumps(metadata, indent=2)[:max_length//2]
+            if len(prompt) > max_length and metadata_added:
+                self.logger.warning("Prompt exceeds max length, truncating metadata")
                 prompt = (
                     f"User Query: {nlq}\n"
-                    f"Schema: {schema}\n"
+                    f"Schemas: {', '.join(schemas)}\n"
                     f"Datasource: {datasource['name']}\n"
-                    f"Metadata: {metadata_str}\n"
+                    f"Entities: {json.dumps(entities, indent=2)}\n"
                     f"Generate a valid SQL query."
                 )
             self.logger.debug(f"Generated user prompt for NLQ: {nlq}")
             return prompt
-        except (ImportError, KeyError, json.JSONDecodeError) as e:
-            self.logger.error(f"Failed to generate user prompt: {str(e)}")
+        except (KeyError, json.JSONDecodeError) as e:
+            self.logger.error(f"Failed to generate user prompt for NLQ {nlq}: {str(e)}")
+            storage_manager.store_rejected_query(
+                datasource, nlq, f"User prompt generation failed: {str(e)}", "system", "PROMPT_ERROR"
+            )
             raise PromptError(f"Failed to generate user prompt: {str(e)}")
 
     def _build_context(self, entities: Dict, schema: str, datasource: Dict, metadata: Dict, prediction: Dict) -> str:
@@ -210,10 +250,9 @@ class PromptGenerator:
             PromptError: If generation fails.
         """
         try:
-            from nlp.nlp_processor import NLPProcessor
-            nlp_processor = NLPProcessor(self.config_utils)
+            nlp_processor = NLPProcessor(self.config_utils, self.logger)
             metadata = self._get_metadata(datasource, schema)
-            prediction = prediction or nlp_processor.process_query(nlq, schema)
+            prediction = prediction or nlp_processor.process_query(nlq, schema, datasource=datasource)
             tables = prediction.get("tables", self._get_related_tables(nlq, schema, datasource, metadata))
             columns = prediction.get("columns", self._get_specific_columns(nlq, schema, datasource, metadata))
             placeholders = prediction.get("placeholders", self._generate_placeholders(entities.get("extracted_values", {})))
@@ -235,7 +274,7 @@ class PromptGenerator:
             }
             self.logger.debug(f"Generated training data row for NLQ: {nlq}")
             return row
-        except (ImportError, json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError) as e:
             self.logger.error(f"Failed to generate training data: {str(e)}")
             raise PromptError(f"Failed to generate training data: {str(e)}")
 
@@ -252,15 +291,15 @@ class PromptGenerator:
             List[str]: Related table names.
         """
         try:
-            from nlp.nlp_processor import NLPProcessor
-            nlp_processor = NLPProcessor(self.config_utils)
-            tokens = nlp_processor.tokenize(nlq.lower())
+            nlp_processor = NLPProcessor(self.config_utils, self.logger)
+            nlp_result = nlp_processor.process_query(nlq.lower(), schema, datasource=datasource)
+            tokens = nlp_result.get("tokens", [])
             tables = []
             for table_name in metadata.get("tables", {}).keys():
                 if any(token in table_name.lower() for token in tokens):
                     tables.append(table_name)
             return tables or [list(metadata["tables"].keys())[0]] if metadata["tables"] else []
-        except (ImportError, IndexError) as e:
+        except Exception as e:
             self.logger.error(f"Failed to identify related tables: {str(e)}")
             return []
 
@@ -277,9 +316,9 @@ class PromptGenerator:
             List[str]: Specific column names.
         """
         try:
-            from nlp.nlp_processor import NLPProcessor
-            nlp_processor = NLPProcessor(self.config_utils)
-            tokens = nlp_processor.tokenize(nlq.lower())
+            nlp_processor = NLPProcessor(self.config_utils, self.logger)
+            nlp_result = nlp_processor.process_query(nlq.lower(), schema, datasource=datasource)
+            tokens = nlp_result.get("tokens", [])
             columns = []
             for table in metadata.get("tables", {}).values():
                 for col in table.get("columns", []):
@@ -290,7 +329,7 @@ class PromptGenerator:
                 first_table = list(metadata["tables"].values())[0]
                 columns = [col["name"] for col in first_table["columns"][:2]]
             return columns
-        except (ImportError, IndexError) as e:
+        except Exception as e:
             self.logger.error(f"Failed to identify specific columns: {str(e)}")
             return []
 
@@ -305,24 +344,40 @@ class PromptGenerator:
         """
         return ["?" for _ in extracted_values]
 
-    def _get_next_scenario_id(self, datasource: Dict) -> int:
-        """Get the next SCENARIO_ID for training data.
+    def _get_next_scenario_id(self, datasource: Dict) -> str:
+        """Generate the next SCENARIO ID for training data.
 
         Args:
             datasource (Dict): Datasource configuration.
 
         Returns:
-            int: Next SCENARIO_ID.
+            str: Formatted scenario ID.
+
+        Raises:
+            PromptError: If generation fails.
         """
         try:
-            from storage.db_manager import DBManager
-            db_manager = DBManager(self.config_utils)
-            training_data = db_manager.get_training_data(datasource)
-            scenario_ids = [int(row["scenario_id"]) for row in training_data if row.get("scenario_id")]
-            return max(scenario_ids) + 1 if scenario_ids else 1
-        except ImportError as e:
-            self.logger.error(f"Failed to import DBManager: {str(e)}")
-            return 1
+            db_manager = DBManager(self.config_utils, self.logger)
+            db_manager._set_datasource(datasource)
+            db_manager._init_sqlite_connection()
+            cursor = None
+            try:
+                cursor = db_manager.sqlite_conn.cursor()
+                cursor.execute("SELECT MAX(id) FROM training_data WHERE db_name = ?", (datasource["name"],))
+                max_id = cursor.fetchone()[0]
+                next_id = (max_id or 0) + 1
+                scenario_id = f"SCN_{datasource['name']}_{next_id:05d}"
+                self.logger.debug(f"Generated scenario ID: {scenario_id}")
+                return scenario_id
+            except Exception as e:
+                self.logger.error(f"Failed to retrieve scenario ID: {str(e)}")
+                raise PromptError(f"Failed to generate scenario ID: {str(e)}")
+            finally:
+                if cursor:
+                    cursor.close()
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve scenario ID: {str(e)}")
+            raise PromptError(f"Failed to generate scenario ID: {str(e)}")
 
     def save_training_data(self, datasource: Dict, training_rows: List[Dict]) -> None:
         """Save training data to SQLite via DBManager.
@@ -335,23 +390,22 @@ class PromptGenerator:
             PromptError: If saving fails.
         """
         try:
-            from storage.db_manager import DBManager
-            db_manager = DBManager(self.config_utils)
-            max_rows = self.llm_config["training_settings"].get("max_rows", 100)
+            db_manager = DBManager(self.config_utils, self.logger)
+            max_rows = self.llm_config["training_settings"].get("max_rows", 0)
             training_rows = training_rows[:max_rows]
             db_manager.store_training_data(datasource, training_rows)
             self.logger.info(f"Saved {len(training_rows)} training rows for datasource {datasource['name']}")
-        except ImportError as e:
-            self.logger.error(f"Failed to import DBManager: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to save training data: {str(e)}")
             raise PromptError(f"Failed to save training data: {str(e)}")
 
-    def mock_llm_call(self, datasource: Dict, prompt: str, schema: str) -> str:
-        """Simulate an LLM call for testing purposes.
+    def mock_llm_call(self, datasource: Dict, prompt: str, schemas: List[str]) -> str:
+        """Simulate an LLM call for testing purposes across multiple schemas.
 
         Args:
             datasource (Dict): Datasource configuration.
             prompt (str): Generated prompt.
-            schema (str): Schema name.
+            schemas (List[str]): List of schema names.
 
         Returns:
             str: Mock SQL query response.
@@ -360,46 +414,66 @@ class PromptGenerator:
             PromptError: If mock call fails.
         """
         try:
+            storage_manager = StorageManager(self.config_utils)
             if not self.llm_config.get("mock_enabled", False):
                 self.logger.error("Mock LLM call attempted but mock_enabled is False")
                 raise PromptError("Mock LLM call not enabled")
-            metadata = self._get_metadata(datasource, schema)
-            is_s3 = datasource["type"] == "s3"
-            tables = list(metadata["tables"].keys())[:1] if metadata["tables"] else []
-            columns = []
-            conditions = []
-            if tables:
-                columns = [col["name"] for col in metadata["tables"][tables[0]]["columns"][:2]]
-            prompt_lines = prompt.split("\n")
-            entities = {}
-            for i, line in enumerate(prompt_lines):
-                if "Entities:" in line:
-                    entities_start = i + 1
-                    entities_json = []
-                    for entity_line in prompt_lines[entities_start:]:
-                        if not entity_line.strip().startswith('"'):
+            for schema in schemas:
+                try:
+                    metadata = self._get_metadata(datasource, schema)
+                    is_s3 = datasource["type"] == "s3"
+                    tables = list(metadata.get("tables", {}).keys())[:1] if metadata else []
+                    if not tables:
+                        self.logger.warning(f"No tables found for schema {schema}")
+                        storage_manager.store_rejected_query(
+                            datasource, prompt, f"No tables for schema {schema}", "system", "NO_TABLES"
+                        )
+                        continue
+                    columns = [col["name"] for col in metadata["tables"][tables[0]].get("columns", [])[:2]]
+                    conditions = []
+                    prompt_lines = prompt.split("\n")
+                    entities = {}
+                    for i, line in enumerate(prompt_lines):
+                        if "Entities:" in line:
+                            entities_start = i + 1
+                            entities_json = []
+                            for entity_line in prompt_lines[entities_start:]:
+                                if not entity_line.strip().startswith('"'):
+                                    break
+                                entities_json.append(entity_line.strip())
+                            if entities_json:
+                                entities = json.loads("{" + ",".join(entities_json)[:len(entities_json[-1])] + "}")
                             break
-                        entities_json.append(entity_line.strip())
-                    entities = json.loads("{" + ",".join(entities_json)[:-1] + "}")
-                    break
-            for key, values in entities.get("entities", {}).items():
-                for val in values:
-                    col = next((c["name"] for c in metadata["tables"][tables[0]]["columns"] if "date" in c["type"].lower()), columns[0] if columns else "")
-                    if key == "dates" and col:
-                        if is_s3:
-                            conditions.append(f"EXTRACT(YEAR FROM {col}) = '{val}'")
-                        else:
-                            conditions.append(f"YEAR({col}) = '{val}'")
-                    elif col:
-                        conditions.append(f"LOWER({col}) LIKE '%{val.lower()}%'")
-            if tables and columns:
-                query = f"SELECT {', '.join(columns)} FROM {schema}.{tables[0]}"
-                if conditions:
-                    query += f" WHERE {' AND '.join(conditions)}"
-                self.logger.debug(f"Mock LLM response: {query}")
-                return query
-            self.logger.warning("Insufficient data for mock LLM response")
+                    for key, values in entities.get("entities", {}).items():
+                        for val in values:
+                            col = next(
+                                (c["name"] for c in metadata["tables"][tables[0]].get("columns", []) if "date" in c["type"].lower()),
+                                columns[0] if columns else ""
+                            )
+                            if key == "dates" and col:
+                                if is_s3:
+                                    conditions.append(f"EXTRACT(YEAR FROM {col}) = '{val}'")
+                                else:
+                                    conditions.append(f"YEAR({col}) = '{val}'")
+                            elif col:
+                                conditions.append(f"LOWER({col}) LIKE '%{val.lower()}%'")
+                    if tables and columns:
+                        query = f"SELECT {', '.join(columns)} FROM {schema}.{tables[0]}"
+                        if conditions:
+                            query += f" WHERE {' AND '.join(conditions)}"
+                        self.logger.info(f"Mock SQL query: {query}")
+                        return query
+                except (json.JSONDecodeError, KeyError) as e:
+                    self.logger.error(f"Mock LLM error for schema {schema}: {str(e)}")
+                    storage_manager.store_rejected_query(
+                        datasource, prompt, f"Mock failed for schema {schema}: {str(e)}", "system", "MOCK_ERROR"
+                    )
+                    continue
+            self.logger.warning("Insufficient data for mock LLM response across all schemas")
             return "# Mock SQL query: insufficient data"
-        except (json.JSONDecodeError, KeyError) as e:
-            self.logger.error(f"Failed to simulate LLM call: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to simulate LLM: {str(e)}")
+            storage_manager.store_rejected_query(
+                datasource, prompt, f"Mock LLM failed: {str(e)}", "system", "MOCK_ERROR"
+            )
             raise PromptError(f"Failed to simulate LLM call: {str(e)}")

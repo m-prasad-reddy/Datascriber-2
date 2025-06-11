@@ -1,9 +1,14 @@
 import json
-import re
+import pandas as pd
 from typing import Dict, List, Optional
 from pathlib import Path
+import logging
+import boto3
+from botocore.exceptions import ClientError
+import pyarrow.parquet as pq
+import pyarrow.orc as orc
+from io import BytesIO
 from config.utils import ConfigUtils, ConfigError
-from config.logging_setup import LoggingSetup
 
 class StorageError(Exception):
     """Custom exception for storage-related errors."""
@@ -29,19 +34,19 @@ class StorageManager:
         table_cache (Dict[str, pd.DataFrame]): Cache for table data.
     """
 
-    def __init__(self, config_utils: ConfigUtils):
+    def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
         """Initialize StorageManager.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
+            logger (logging.Logger): System logger.
 
         Raises:
             StorageError: If initialization fails.
         """
         self.config_utils = config_utils
+        self.logger = logger
         try:
-            self.logging_setup = LoggingSetup.get_instance(self.config_utils)
-            self.logger = self.logging_setup.get_logger("storage", "system")
             self.s3_client = None
             self.datasource = None
             self.bucket_name = None
@@ -58,7 +63,7 @@ class StorageManager:
     def _set_datasource(self, datasource: Dict) -> None:
         """Set and validate S3 datasource configuration.
 
-        Detects the file type for the datasource.
+        Detects the file type and cleans invalid metadata files.
 
         Args:
             datasource (Dict): S3 datasource configuration.
@@ -84,7 +89,26 @@ class StorageManager:
         self.orc_pattern = datasource["connection"].get("orc_pattern", r"^data_")
         self._init_s3_client()
         self._detect_datasource_file_type()
+        self._clean_invalid_metadata()
         self.logger.info(f"Set S3 datasource: {datasource['name']} with file type: {self.file_type}")
+
+    def _clean_invalid_metadata(self) -> None:
+        """Remove metadata files not matching configured schemas."""
+        try:
+            datasource_name = self.datasource["name"]
+            valid_schemas = self.datasource["connection"].get("schemas", ["default"])
+            data_dir = self.config_utils.get_datasource_data_dir(datasource_name)
+            for file_path in data_dir.glob("metadata_data_*.json"):
+                schema = file_path.stem.replace("metadata_data_", "")
+                if schema not in valid_schemas:
+                    self.logger.warning(f"Removing invalid metadata file for schema: {schema} at {file_path}")
+                    file_path.unlink(missing_ok=True)
+                rich_path = file_path.parent / f"metadata_data_{schema}_rich.json"
+                if rich_path.exists():
+                    self.logger.warning(f"Removing invalid rich metadata file: {rich_path}")
+                    rich_path.unlink(missing_ok=True)
+        except Exception as e:
+            self.logger.error(f"Failed to clean invalid metadata files: {str(e)}")
 
     def _init_s3_client(self) -> None:
         """Initialize S3 client.
@@ -92,8 +116,6 @@ class StorageManager:
         Raises:
             StorageError: If initialization fails.
         """
-        import boto3
-        from botocore.exceptions import ClientError
         if not self.bucket_name or not self.region:
             self.logger.error("Bucket name or region not set")
             raise StorageError("Bucket name or region not set")
@@ -126,7 +148,6 @@ class StorageManager:
         Raises:
             StorageError: If no valid files or multiple types detected.
         """
-        from botocore.exceptions import ClientError
         try:
             prefix = f"{self.database}/"
             response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix, MaxKeys=100)
@@ -166,7 +187,6 @@ class StorageManager:
         Raises:
             StorageError: If list fails.
         """
-        from botocore.exceptions import ClientError
         try:
             table_prefix = f"{prefix}{table}/"
             response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=table_prefix)
@@ -203,12 +223,11 @@ class StorageManager:
         Raises:
             StorageError: If metadata fetching fails.
         """
-        import pandas as pd
-        import pyarrow.parquet as pq
-        import pyarrow.orc as orc
-        from botocore.exceptions import ClientError
-        from io import BytesIO
         self._set_datasource(datasource)
+        if not isinstance(schema, str) or not schema.strip():
+            self.logger.warning(f"Invalid schema: {schema}, skipping metadata fetch")
+            return False
+        self.logger.debug(f"Fetching metadata for schema {schema} in datasource {datasource['name']}")
         prefix = f"{self.database}/"
         try:
             llm_config = self.config_utils.load_llm_config()
@@ -289,16 +308,16 @@ class StorageManager:
                 except (ClientError, pd.errors.EmptyDataError, pd.errors.ParserError) as e:
                     self.logger.warning(f"Failed to read metadata for table {table} in schema {schema}: {str(e)}")
                     continue
-                datasource_data_dir = self.config_utils.get_datasource_data_dir(datasource["name"])
-                metadata_path = datasource_data_dir / f"metadata_data_{schema}.json"
-                metadata_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(metadata_path, "w") as f:
-                    json.dump(metadata, f, indent=2)
-                self.logger.info(f"Saved base metadata for schema {schema} to {metadata_path}")
-                rich_metadata_path = datasource_data_dir / f"metadata_data_{schema}_rich.json"
-                with open(rich_metadata_path, "w") as f:
-                    json.dump(rich_metadata, f, indent=2)
-                self.logger.info(f"Generated rich metadata for schema {schema} to {rich_metadata_path}")
+            datasource_data_dir = self.config_utils.get_datasource_data_dir(datasource["name"])
+            metadata_path = datasource_data_dir / f"metadata_data_{schema}.json"
+            metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(metadata_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+            self.logger.info(f"Saved base metadata for schema {schema} to {metadata_path}")
+            rich_metadata_path = datasource_data_dir / f"metadata_data_{schema}_rich.json"
+            with open(rich_metadata_path, "w") as f:
+                json.dump(rich_metadata, f, indent=2)
+            self.logger.info(f"Generated rich metadata for schema {schema} to {rich_metadata_path}")
             return bool(metadata["tables"])
         except (ClientError, json.JSONEncodeError, ConfigError) as e:
             self.logger.error(f"Failed to fetch S3 metadata for schema {schema} in {datasource['name']}: {str(e)}")
@@ -318,12 +337,10 @@ class StorageManager:
         Raises:
             StorageError: If data reading fails.
         """
-        import pandas as pd
-        import pyarrow.parquet as pq
-        import pyarrow.orc as orc
-        from botocore.exceptions import ClientError
-        from io import BytesIO
         self._set_datasource(datasource)
+        if not isinstance(schema, str) or not schema.strip():
+            self.logger.error(f"Invalid schema: {schema}")
+            raise StorageError(f"Invalid schema: {schema}")
         if not table or any(c in table for c in ["/", "\\"]):
             self.logger.error(f"Invalid table name: {table}")
             raise StorageError(f"Invalid table name: {table}")
@@ -387,6 +404,9 @@ class StorageManager:
         if not self.datasource or not self.bucket_name or not self.database:
             self.logger.error("Datasource not set")
             raise StorageError("Datasource not set")
+        if not isinstance(schema, str) or not schema.strip():
+            self.logger.error(f"Invalid schema: {schema}")
+            raise StorageError(f"Invalid schema: {schema}")
         if not table or any(c in table for c in ["/", "\\"]):
             self.logger.error(f"Invalid table name: {table}")
             raise StorageError(f"Invalid table name: {table}")
@@ -407,11 +427,14 @@ class StorageManager:
         Raises:
             StorageError: If validation fails.
         """
-        from botocore.exceptions import ClientError
         self._set_datasource(datasource)
+        if not isinstance(schema, str) or not schema.strip():
+            self.logger.warning(f"Invalid schema: {schema}, skipping validation")
+            return False
+        self.logger.debug(f"Validating metadata for schema {schema} in datasource {datasource['name']}")
         try:
-            metadata = self.config_utils.load_metadata(datasource["name"], schema)
-            if not metadata.get("tables"):
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema])
+            if not metadata.get(schema, {}).get("tables"):
                 self.logger.warning(f"No metadata tables found for schema {schema}")
                 return self.fetch_metadata(datasource, schema)
             prefix = f"{self.database}/"
@@ -438,10 +461,14 @@ class StorageManager:
             StorageError: If loading fails.
         """
         self._set_datasource(datasource)
+        if not isinstance(schema, str) or not schema.strip():
+            self.logger.error(f"Invalid schema: {schema}")
+            raise StorageError(f"Invalid schema: {schema}")
+        self.logger.debug(f"Loading metadata for schema {schema} in datasource {datasource['name']}")
         try:
-            metadata = self.config_utils.load_metadata(datasource["name"], schema)
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema])
             self.logger.debug(f"Loaded metadata for schema {schema} in {datasource['name']}")
-            return metadata
+            return metadata.get(schema, {})
         except ConfigError as e:
             self.logger.error(f"Failed to load metadata for schema {schema} in {datasource['name']}: {str(e)}")
             raise StorageError(f"Failed to load metadata: {str(e)}")

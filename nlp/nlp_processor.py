@@ -1,4 +1,7 @@
 import json
+import logging
+import openai
+import numpy
 from pathlib import Path
 from typing import Dict, List, Optional
 import re
@@ -25,21 +28,22 @@ class NLPProcessor:
         embedding_cache (Dict[str, Dict[str, List[float]]]): Cached embeddings by schema.
     """
 
-    def __init__(self, config_utils: ConfigUtils):
+    def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
         """Initialize NLPProcessor.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
+            logger (logging.Logger): System logger.
 
         Raises:
             NLPError: If initialization fails.
         """
         self.config_utils = config_utils
+        self.logger = logger
         try:
-            self.logging_setup = LoggingSetup.get_instance(self.config_utils)
-            self.logger = self.logging_setup.get_logger("nlp", "system")
             self.nlp = None
             self.synonym_mode = self._load_synonym_mode()
+            self.logger.debug("Loaded synonym mode")
             self.synonym_cache = {}
             self.embedding_cache = {}
             self._init_nlp()
@@ -129,12 +133,10 @@ class NLPProcessor:
             NLPError: If synonym generation fails.
         """
         try:
-            from openai import AzureOpenAI
-            import numpy as np
             llm_config = self.config_utils.load_llm_config()
             azure_config = self.config_utils.load_azure_config()
             model_config = self.config_utils.load_model_config()
-            client = AzureOpenAI(
+            client = openai.AzureOpenAI(
                 azure_endpoint=azure_config["endpoint"],
                 api_key=azure_config["api_key"],
                 api_version=llm_config.get("api_version", "2023-10-01-preview")
@@ -178,8 +180,8 @@ class NLPProcessor:
             synonyms = []
             threshold = model_config.get("confidence_threshold", 0.7)
             for candidate, candidate_embedding in self.embedding_cache[cache_key].items():
-                similarity = np.dot(term_embedding, candidate_embedding) / (
-                    np.linalg.norm(term_embedding) * np.linalg.norm(candidate_embedding)
+                similarity = numpy.dot(term_embedding, candidate_embedding) / (
+                    numpy.linalg.norm(term_embedding) * numpy.linalg.norm(candidate_embedding)
                 )
                 if similarity > threshold:
                     synonyms.append(candidate)
@@ -192,7 +194,7 @@ class NLPProcessor:
             self.synonym_cache[cache_key] = synonyms_dict
             self.logger.info(f"Updated dynamic synonyms for schema {schema}")
             return synonyms
-        except (ImportError, KeyError, json.JSONDecodeError) as e:
+        except (KeyError, json.JSONDecodeError) as e:
             self.logger.error(f"Failed to generate dynamic synonyms for {term}: {str(e)}")
             raise NLPError(f"Failed to generate dynamic synonyms: {str(e)}")
 

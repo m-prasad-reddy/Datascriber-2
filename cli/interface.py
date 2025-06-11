@@ -1,13 +1,16 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import shlex
 from tabulate import tabulate
 from datetime import datetime
 import re
+import logging
 from config.utils import ConfigUtils, ConfigError
-from config.logging_setup import LoggingSetup
+from core.orchestrator import Orchestrator
+from nlp.nlp_processor import NLPProcessor
+from storage.db_manager import DBManager, DBError
 
 class CLIError(Exception):
     """Custom exception for CLI-related errors."""
@@ -20,6 +23,7 @@ class Interface:
 
     Attributes:
         config_utils (ConfigUtils): Configuration utility instance.
+        orchestrator (Orchestrator): Orchestrator instance.
         logger (logging.Logger): CLI logger.
         username (Optional[str]): Current user.
         datasource (Optional[Dict]): Selected datasource configuration.
@@ -27,19 +31,21 @@ class Interface:
         llm_config (Dict): LLM configuration for validation.
     """
 
-    def __init__(self, config_utils: ConfigUtils):
+    def __init__(self, config_utils: ConfigUtils, orchestrator: Orchestrator, logger: logging.Logger):
         """Initialize Interface.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
+            orchestrator (Orchestrator): Orchestrator instance.
+            logger (logging.Logger): System logger.
 
         Raises:
             CLIError: If initialization fails.
         """
         self.config_utils = config_utils
+        self.orchestrator = orchestrator
+        self.logger = logger
         try:
-            self.logging_setup = LoggingSetup.get_instance(self.config_utils)
-            self.logger = self.logging_setup.get_logger("cli", "system")
             self.username = None
             self.datasource = None
             self.parser = self._create_parser()
@@ -82,7 +88,6 @@ class Interface:
         ds_parser.add_argument("name", help="Datasource name")
         query_parser = subparsers.add_parser("query", help="Submit an NLQ")
         query_parser.add_argument("nlq", nargs="+", type=str, help="Natural language query")
-        query_parser.add_argument("--schema", default="default", help="Schema name")
         subparsers.add_parser("refresh-metadata", help="Refresh metadata (admin only)")
         subparsers.add_parser("train-model", help="Train prediction model (admin only)")
         mode_parser = subparsers.add_parser("set-synonym-mode", help="Set synonym mode (admin only)")
@@ -94,7 +99,7 @@ class Interface:
         subparsers.add_parser("query-mode", help="Enter query mode (admin/datauser)")
         list_cols_parser = subparsers.add_parser("list-columns", help="List columns for a table")
         list_cols_parser.add_argument("table", help="Table name")
-        list_cols_parser.add_argument("--schema", default="default", help="Schema name")
+        list_cols_parser.add_argument("--schema", default="schema", help="Schema name")
         notif_parser = subparsers.add_parser("manage-notifications", help="Manage notifications (view/resolve/delete/retry)")
         notif_parser.add_argument("action", choices=["view", "resolve", "delete", "retry"], help="Notification action")
         notif_parser.add_argument("id", nargs="?", type=int, help="Notification ID (required for resolve/delete/retry)")
@@ -102,7 +107,7 @@ class Interface:
         return parser
 
     def run(self) -> None:
-        """Run the CLI loop.
+        """Run the main CLI loop.
 
         Raises:
             CLIError: If execution fails.
@@ -114,9 +119,9 @@ class Interface:
                     command = input("> ").strip()
                     if not command:
                         continue
-                    args = self.parse_args_from_input(command)
+                    args = self._parse_args_from_input(command)
                     if args.command == "exit":
-                        print("Exiting...")
+                        print("Exiting CLI...")
                         self.logger.info("User exited CLI")
                         return
                     self.execute_command(args)
@@ -134,7 +139,7 @@ class Interface:
             self.logger.error(f"CLI execution failed: {str(e)}")
             raise CLIError(f"CLI execution failed: {str(e)}")
 
-    def parse_args_from_input(self, command: str) -> argparse.Namespace:
+    def _parse_args_from_input(self, command: str) -> argparse.Namespace:
         """Parse command input.
 
         Args:
@@ -151,14 +156,12 @@ class Interface:
             args = shlex.split(command)
             if not args:
                 raise argparse.ArgumentError(None, "Empty command")
-            if args[0].lower() == "exit":
-                args[0] = "exit"
             return self.parser.parse_args(args)
         except ValueError:
             raise argparse.ArgumentError(None, "Invalid command syntax")
 
     def _validate_date_format(self, nlq: str) -> bool:
-        """Validate date formats in the NLQ.
+        """Validate date formats in the natural language query.
 
         Args:
             nlq (str): Natural language query.
@@ -211,7 +214,7 @@ class Interface:
             elif args.command == "query":
                 nlq = " ".join(args.nlq)
                 if self._validate_date_format(nlq):
-                    self.submit_query(nlq, args.schema)
+                    self.submit_query(nlq)
             elif args.command == "refresh-metadata":
                 self.refresh_metadata()
             elif args.command == "train-model":
@@ -221,7 +224,7 @@ class Interface:
             elif args.command == "map-failed-query":
                 self.map_failed_query(args.schema)
             elif args.command == "list-datasources":
-                self.list_datasource()
+                self.list_datasources()
             elif args.command == "list-schemas":
                 self.list_schemas()
             elif args.command == "query-mode":
@@ -246,18 +249,16 @@ class Interface:
         Raises:
             CLIError: If login fails.
         """
-        from core.orchestrator import Orchestrator
-        orchestrator = Orchestrator(self.config_utils)
-        if orchestrator.login(username):
+        if self.orchestrator.login(username):
             self.username = username
             print(f"Logged in as {username}")
-            self.logger.info(f"User {username} logged in")
+            self.logger.debug(f"User {username} logged in")
         else:
             self.logger.error(f"Login failed for username: {username}")
             raise CLIError("Invalid username")
 
     def select_datasource(self, name: str) -> None:
-        """Select a datasource.
+        """Select a datasource configuration.
 
         Args:
             name (str): Datasource name.
@@ -265,24 +266,27 @@ class Interface:
         Raises:
             CLIError: If selection fails.
         """
-        from core.orchestrator import Orchestrator
-        orchestrator = Orchestrator(self.config_utils)
         if not self.username:
             self.logger.error("No user logged in")
             raise CLIError("Please log in first")
-        if orchestrator.select_datasource(name):
+        if self.orchestrator.select_datasource(name):
             config = self.config_utils.load_db_configurations()
             self.datasource = next((ds for ds in config["datasources"] if ds["name"] == name), None)
             if not self.datasource:
                 self.logger.error(f"Datasource configuration not found: {name}")
                 raise CLIError("Datasource configuration not found")
-            if orchestrator.validate_metadata(self.datasource):
+            schemas = self.datasource["connection"].get("schemas", ["default"])
+            self.logger.debug(f"Validating metadata for datasource {name} with schemas {schemas}")
+            if not schemas and not self.datasource["connection"].get("tables"):
+                self.logger.error(f"No schemas or tables configured for datasource: {name}")
+                raise CLIError("No schemas or tables configured")
+            if self.orchestrator.validate_metadata(self.datasource, schemas=schemas):
                 print(f"Selected datasource: {name}")
-                self.logger.info(f"Selected datasource: {name}")
+                self.logger.debug(f"Selected datasource: {name}")
                 if self.username == "datauser":
                     self.enter_query_mode()
                 else:
-                    print("Type 'query-mode' to enter query mode or 'query <nlq> [--schema <schema>]' to submit a query.")
+                    print("Type 'query-mode' to enter query mode or 'query <nlq>' to submit a query.")
             else:
                 self.logger.error("Metadata validation failed")
                 self.datasource = None
@@ -295,62 +299,60 @@ class Interface:
             raise CLIError("Invalid datasource")
 
     def enter_query_mode(self) -> None:
-        """Enter query mode for data users or admins.
+        """Enter query mode for continuous NLQ input.
 
-        Allows continuous NLQ input until 'exit' is entered.
+        Raises:
+            CLIError: If no user or datasource is selected.
         """
         if not self.username:
             self.logger.error("No user logged in")
             raise CLIError("Please log in first")
         if not self.datasource:
             self.logger.error("No datasource selected")
-            raise CLIError("Please select a datasource first")
+            raise CLIError("No datasource selected")
         print("Entered query mode. Type your query or 'exit' to return to main menu.")
         while True:
             try:
                 query = input("Query> ").strip()
                 if query.lower() == "exit":
                     print("Exiting query mode.")
-                    self.logger.info("Exited query mode")
+                    self.logger.debug("Exited query mode")
                     return
                 if not query:
                     continue
-                schema = input("Schema (default: default)> ").strip() or "default"
                 if self._validate_date_format(query):
-                    self.submit_query(query, schema)
+                    self.submit_query(query)
             except KeyboardInterrupt:
                 print("\nExiting query mode.")
-                self.logger.info("User interrupted query mode")
+                self.logger.debug("User interrupted query mode")
                 return
             except CLIError as e:
                 print(f"Error: {str(e)}")
                 self.logger.error(f"Query error: {str(e)}")
 
-    def submit_query(self, nlq: str, schema: str = "default") -> None:
-        """Submit an NLQ for a specific schema.
+    def submit_query(self, nlq: str) -> None:
+        """Submit an NLQ across all configured schemas.
 
         Args:
             nlq (str): Natural language query.
-            schema (str): Schema name.
 
         Raises:
             CLIError: If query fails.
         """
-        from core.orchestrator import Orchestrator
-        from nlp.nlp_processor import NLPProcessor
-        orchestrator = Orchestrator(self.config_utils)
-        nlp_processor = NLPProcessor(self.config_utils)
+        nlp_processor = NLPProcessor(self.config_utils, self.logger)
         if not self.username:
             self.logger.error("No user logged in")
-            raise CLIError("Please log in first")
+            raise CLIError("No user logged in")
         if not self.datasource:
             self.logger.error("No datasource selected")
-            raise CLIError("Please select a datasource first")
+            raise CLIError("No datasource selected")
+        schemas = self.datasource["connection"].get("schemas", ["default"])
+        self.logger.debug(f"Processing NLQ '{nlq}' for schemas {schemas}")
         try:
-            entities = nlp_processor.process_query(nlq, schema).get("entities", {})
-            result = orchestrator.process_nlq(self.datasource, nlq, schema, entities)
-            if result:
-                print(f"Results for schema {schema}:")
+            entities = nlp_processor.process_query(nlq, schemas[0]).get("entities", {})
+            result = self.orchestrator.process_nlq(self.datasource, nlq, schemas=schemas, entities=entities)
+            if result and result.get("sample_data"):
+                print(f"Results for schemas {', '.join(schemas)}:")
                 print(f"Tables: {', '.join(result['tables']) if result['tables'] else 'None'}")
                 print(f"Columns: {', '.join(result['columns']) if result['columns'] else 'None'}")
                 print(f"SQL Query: {result['sql_query']}")
@@ -369,64 +371,60 @@ class Interface:
                     print("No sample data available")
                 print(f"Full results saved to: {result['csv_path']}")
                 self.logger.info(f"Query results saved to: {result['csv_path']}")
-            else:
-                message = "Query cannot be processed. Notified admin."
-                self.logger.warning(f"No results for query: {nlq}")
-                orchestrator.notify_admin(self.datasource, nlq, schema, "No results returned", entities)
-                print(message)
+                return
+            message = "Query cannot be processed. Notified admin."
+            self.logger.warning(f"No results for query: {nlq}")
+            self.orchestrator.notify_admin(self.datasource, nlq, schemas, "No results returned", entities)
+            print(message)
         except (ImportError, ConfigError) as e:
             self.logger.error(f"Failed to process NLQ: {str(e)}")
-            orchestrator.notify_admin(self.datasource, nlq, schema, str(e), entities)
+            self.orchestrator.notify_admin(self.datasource, nlq, schemas, str(e), entities)
             raise CLIError(f"Failed to process query: {str(e)}")
 
     def refresh_metadata(self) -> None:
-        """Refresh metadata (admin only).
+        """Refresh metadata for all schemas (admin only).
 
         Raises:
             CLIError: If execution fails.
         """
-        from core.orchestrator import Orchestrator
-        orchestrator = Orchestrator(self.config_utils)
         if not self.username or self.username != "admin":
             self.logger.error("Admin privileges required")
             raise CLIError("Admin privileges required")
         if not self.datasource:
             self.logger.error("No datasource selected")
-            raise CLIError("Please select a datasource first")
+            raise CLIError("No datasource selected")
         try:
-            schemas = self.datasource["connection"].get("schemas", [])
-            if not schemas:
-                raise CLIError("No schemas configured in db_configurations.json")
-            for schema in schemas:
-                if orchestrator.refresh_metadata(self.datasource, schema):
-                    print(f"Metadata refreshed for schema: {schema}")
-                    self.logger.info(f"Refreshed metadata for schema: {schema}")
-                else:
-                    self.logger.error(f"Metadata refresh failed for schema: {schema}")
-                    raise CLIError(f"Metadata refresh failed for schema: {schema}")
+            schemas = self.datasource["connection"].get("schemas", ["default"])
+            if not schemas and not self.datasource["connection"].get("tables"):
+                raise CLIError("No schemas or tables configured in db_configurations.json")
+            if self.orchestrator.refresh_metadata(self.datasource, schemas):
+                print(f"Metadata refreshed for schemas: {', '.join(schemas)}")
+                self.logger.debug(f"Refreshed metadata for schemas: {schemas}")
+            else:
+                self.logger.error(f"Metadata refresh failed for schemas: {schemas}")
+                raise CLIError(f"Metadata refresh failed")
         except KeyError as e:
             self.logger.error(f"Invalid datasource configuration: {str(e)}")
             raise CLIError(f"Invalid datasource configuration: {str(e)}")
 
     def train_model(self) -> None:
-        """Train prediction model (admin only).
+        """Train the model (admin only).
 
         Raises:
             CLIError: If execution fails.
         """
-        from core.orchestrator import Orchestrator
-        orchestrator = Orchestrator(self.config_utils)
         if not self.username or self.username != "admin":
             self.logger.error("Admin privileges required")
             raise CLIError("Admin privileges required")
         if not self.datasource:
             self.logger.error("No datasource selected")
-            raise CLIError("Please select a datasource first")
+            raise CLIError("No datasource selected")
         try:
-            if orchestrator.train_model(self.datasource):
+            if self.orchestrator.train_model(self.datasource):
                 print("Model training completed")
                 self.logger.info("Trained prediction model")
             else:
+                self.logger.error("Model training failed")
                 raise CLIError("Model training failed")
         except ConfigError as e:
             self.logger.error(f"Failed to train model: {str(e)}")
@@ -436,7 +434,7 @@ class Interface:
         """Set synonym mode (admin only).
 
         Args:
-            mode (str): 'static' or 'dynamic'.
+            mode (str): Synonym mode ('static' or 'dynamic').
 
         Raises:
             CLIError: If execution fails.
@@ -445,19 +443,18 @@ class Interface:
             self.logger.error("Admin privileges required")
             raise CLIError("Admin privileges required")
         try:
-            config_path = self.config_utils.config_dir / "synonym_config.json"
-            config = {"synonym_mode": mode}
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(config_path, "w") as f:
-                json.dump(config, f, indent=2)
-            print(f"Set synonym mode to: {mode}")
-            self.logger.info(f"Set synonym mode to: {mode}")
-        except (IOError, json.JSONEncodeError) as e:
+            if self.orchestrator.set_synonym_mode(mode):
+                print(f"Synonym mode set to: {mode}")
+                self.logger.info(f"Set synonym mode to: {mode}")
+            else:
+                self.logger.error("Failed to set synonym mode")
+                raise CLIError("Failed to set synonym mode")
+        except ConfigError as e:
             self.logger.error(f"Failed to set synonym mode: {str(e)}")
             raise CLIError(f"Failed to set synonym mode: {str(e)}")
 
-    def map_failed_query(self, schema: str = "default") -> None:
-        """Map a failed query to tables, columns, and SQL (admin only).
+    def map_failed_query(self, schema: str) -> None:
+        """Map failed queries (admin only).
 
         Args:
             schema (str): Schema name.
@@ -465,48 +462,58 @@ class Interface:
         Raises:
             CLIError: If execution fails.
         """
-        from core.orchestrator import Orchestrator
-        orchestrator = Orchestrator(self.config_utils)
         if not self.username or self.username != "admin":
             self.logger.error("Admin privileges required")
             raise CLIError("Admin privileges required")
         if not self.datasource:
             self.logger.error("No datasource selected")
-            raise CLIError("Please select a datasource first")
+            raise CLIError("No datasource selected")
         try:
-            print("Enter failed NLQ:")
-            nlq = input("> ").strip()
-            print("Enter tables (comma-separated):")
-            tables = [t.strip() for t in input("> ").strip().split(",")]
-            print("Enter columns (comma-separated):")
-            columns = [c.strip() for c in input("> ").strip().split(",")]
-            print("Enter SQL query:")
-            sql = input("> ").strip()
-            if orchestrator.map_failed_query(self.datasource, nlq, tables, columns, sql):
-                print("Failed query mapped successfully")
-                self.logger.info(f"Mapped failed query: {nlq}")
+            db_manager = DBManager(self.config_utils, self.logger)
+            rejected_queries = db_manager.get_rejected_queries(self.datasource)
+            if not rejected_queries:
+                print("No rejected queries found.")
+                self.logger.info("No rejected queries to map")
+                return
+            for query in rejected_queries:
+                print(f"Query ID: {query['id']}, NLQ: {query['query']}, Reason: {query['reason']}")
+            query_id = int(input("Enter query ID to map (or 0 to cancel): "))
+            if query_id == 0:
+                self.logger.debug("Cancelled query mapping")
+                return
+            selected_query = next((q for q in rejected_queries if q["id"] == query_id), None)
+            if not selected_query:
+                self.logger.error(f"Invalid query ID: {query_id}")
+                raise CLIError("Invalid query ID")
+            corrected_sql = input("Enter corrected SQL query: ").strip()
+            if self.orchestrator.map_failed_query(self.datasource, selected_query["query"], corrected_sql, schema):
+                print(f"Query ID {query_id} mapped successfully")
+                db_manager.update_rejected_query(self.datasource, query_id, "mapped")
+                self.logger.info(f"Mapped query ID {query_id}")
             else:
+                self.logger.error(f"Failed to map query ID: {query_id}")
                 raise CLIError("Failed to map query")
-        except (ValueError, ConfigError) as e:
+        except (DBError, ValueError) as e:
             self.logger.error(f"Failed to map failed query: {str(e)}")
             raise CLIError(f"Failed to map failed query: {str(e)}")
 
-    def list_datasource(self) -> None:
+    def list_datasources(self) -> None:
         """List available datasources.
 
         Raises:
-            CLIError: If listing fails.
+            CLIError: If execution fails.
         """
         try:
             config = self.config_utils.load_db_configurations()
-            datasources = [ds.get("name") for ds in config.get("datasources", [])]
+            datasources = [ds["name"] for ds in config["datasources"]]
             if not datasources:
-                print("No datasources available")
-            else:
-                print("Available datasources:")
-                for ds in datasources:
-                    print(f" - {ds}")
-            self.logger.info("Listed available datasources")
+                print("No datasources available.")
+                self.logger.info("No datasources found")
+                return
+            print("Available datasources:")
+            for ds in datasources:
+                print(f"- {ds}")
+            self.logger.info(f"Listed {len(datasources)} datasources")
         except ConfigError as e:
             self.logger.error(f"Failed to list datasources: {str(e)}")
             raise CLIError(f"Failed to list datasources: {str(e)}")
@@ -515,25 +522,26 @@ class Interface:
         """List available schemas for the selected datasource.
 
         Raises:
-            CLIError: If listing fails.
+            CLIError: If execution fails.
         """
         if not self.datasource:
             self.logger.error("No datasource selected")
             raise CLIError("No datasource selected")
         try:
-            schemas = self.datasource["connection"].get("schemas", [])
+            schemas = self.datasource["connection"].get("schemas", ["default"])
             if not schemas:
-                print("No schemas configured")
-            else:
-                print("Available schemas:")
-                for schema in schemas:
-                    print(f" - {schema}")
-            self.logger.info(f"Listed schemas for datasource: {self.datasource['name']}")
+                print("No schemas configured.")
+                self.logger.info("No schemas found")
+                return
+            print("Available schemas:")
+            for schema in schemas:
+                print(f"- {schema}")
+            self.logger.info(f"Listed {len(schemas)} schemas")
         except KeyError as e:
             self.logger.error(f"Invalid datasource configuration: {str(e)}")
             raise CLIError(f"Invalid datasource configuration: {str(e)}")
 
-    def list_columns(self, table: str, schema: str = "default") -> None:
+    def list_columns(self, table: str, schema: str) -> None:
         """List columns for a specified table.
 
         Args:
@@ -541,31 +549,32 @@ class Interface:
             schema (str): Schema name.
 
         Raises:
-            CLIError: If listing fails.
+            CLIError: If execution fails.
         """
-        from core.orchestrator import Orchestrator
-        orchestrator = Orchestrator(self.config_utils)
-        if not self.username:
-            self.logger.error("No user logged in")
-            raise CLIError("Please log in first")
         if not self.datasource:
             self.logger.error("No datasource selected")
-            raise CLIError("Please select a datasource first")
+            raise CLIError("No datasource selected")
         try:
-            columns = orchestrator.get_table_columns(self.datasource, schema, table)
-            if columns:
-                print(f"Columns for table {table} in schema {schema}:")
-                for col in columns:
-                    print(f" - {col}")
-                self.logger.info(f"Listed columns for table: {table}")
-            else:
-                print(f"No columns found for table {table} in schema {schema}")
-                self.logger.warning(f"No columns found for table: {table}")
-        except ConfigError as e:
-            self.logger.error(f"Failed to list columns for table {table}: {str(e)}")
+            db_manager = DBManager(self.config_utils, self.logger)
+            metadata = db_manager.get_metadata(self.datasource, schema)
+            tables = metadata.get("tables", {})
+            if table not in tables:
+                self.logger.error(f"Table {table} not found in schema {schema}")
+                raise CLIError(f"Table {table} not found")
+            columns = tables[table].get("columns", [])
+            if not columns:
+                print(f"No columns found for table {table}.")
+                self.logger.info(f"No columns found for table {table}")
+                return
+            print(f"Columns for table {table} in schema {schema}:")
+            for col in columns:
+                print(f"- {col['name']} ({col['type']})")
+            self.logger.info(f"Listed {len(columns)} columns for table {table}")
+        except DBError as e:
+            self.logger.error(f"Failed to list columns: {str(e)}")
             raise CLIError(f"Failed to list columns: {str(e)}")
 
-    def manage_notifications(self, action: str, notification_id: Optional[int] = None) -> None:
+    def manage_notifications(self, action: str, notification_id: Optional[int]) -> None:
         """Manage notifications (view/resolve/delete/retry).
 
         Args:
@@ -573,63 +582,48 @@ class Interface:
             notification_id (Optional[int]): Notification ID for resolve/delete/retry.
 
         Raises:
-            CLIError: If action fails.
+            CLIError: If execution fails.
         """
-        from core.orchestrator import Orchestrator
-        from storage.db_manager import DBManager
-        orchestrator = Orchestrator(self.config_utils)
-        db_manager = DBManager(self.config_utils)
         if not self.username or self.username != "admin":
             self.logger.error("Admin privileges required")
             raise CLIError("Admin privileges required")
+        if not self.datasource:
+            self.logger.error("No datasource selected")
+            raise CLIError("No datasource selected")
         try:
-            notifications = db_manager.get_rejected_queries(self.datasource) if self.datasource else []
+            db_manager = DBManager(self.config_utils, self.logger)
             if action == "view":
-                if not notifications:
-                    print("No notifications available")
-                else:
-                    print("Notifications:")
-                    table = [[n["id"], n["timestamp"], n["query"], n["reason"]] for n in notifications]
-                    print(tabulate(table, headers=["ID", "Timestamp", "Query", "Reason"], tablefmt="grid"))
-                self.logger.info("Viewed notifications")
+                rejected_queries = db_manager.get_rejected_queries(self.datasource)
+                if not rejected_queries:
+                    print("No notifications available.")
+                    self.logger.info("No notifications found")
+                    return
+                print("Notifications:")
+                for query in rejected_queries:
+                    print(f"ID: {query['id']}, Query: {query['query']}, Reason: {query['reason']}, Time: {query['timestamp']}")
+                self.logger.info(f"Viewed {len(rejected_queries)} notifications")
             elif action in ["resolve", "delete", "retry"]:
-                if notification_id is None:
-                    raise CLIError("Notification ID required for resolve/delete/retry")
-                target = next((n for n in notifications if n["id"] == notification_id), None)
-                if not target:
-                    raise CLIError(f"Notification ID {notification_id} not found")
+                if not notification_id:
+                    self.logger.error("Notification ID required")
+                    raise CLIError("Notification ID required")
                 if action == "resolve":
                     db_manager.update_rejected_query(self.datasource, notification_id, "resolved")
-                    print(f"Notification {notification_id} marked as resolved")
+                    print(f"Notification ID {notification_id} resolved.")
                     self.logger.info(f"Resolved notification ID {notification_id}")
                 elif action == "delete":
                     db_manager.delete_rejected_query(self.datasource, notification_id)
-                    print(f"Notification {notification_id} deleted")
+                    print(f"Notification ID {notification_id} deleted.")
                     self.logger.info(f"Deleted notification ID {notification_id}")
                 elif action == "retry":
-                    if self._validate_date_format(target["query"]):
-                        from nlp.nlp_processor import NLPProcessor
-                        nlp_processor = NLPProcessor(self.config_utils)
-                        entities = nlp_processor.process_query(target["query"], "default").get("entities", {})
-                        self.submit_query(target["query"], "default")
-                        print(f"Retried notification {notification_id}")
-                        self.logger.info(f"Retried notification ID {notification_id}")
-        except (ImportError, ConfigError) as e:
+                    rejected_queries = db_manager.get_rejected_queries(self.datasource)
+                    query = next((q for q in rejected_queries if q["id"] == notification_id), None)
+                    if not query:
+                        self.logger.error(f"Invalid notification ID: {notification_id}")
+                        raise CLIError("Invalid notification ID")
+                    self.submit_query(query["query"])
+                    db_manager.update_rejected_query(self.datasource, notification_id, "retried")
+                    print(f"Notification ID {notification_id} retried.")
+                    self.logger.info(f"Retried notification ID {notification_id}")
+        except DBError as e:
             self.logger.error(f"Failed to manage notifications: {str(e)}")
             raise CLIError(f"Failed to manage notifications: {str(e)}")
-
-def main():
-    """Main entry point for the CLI."""
-    try:
-        config_utils = ConfigUtils()
-        cli = Interface(config_utils)
-        cli.run()
-    except CLIError as e:
-        print(f"Error: {str(e)}")
-        logging.error(f"CLI terminated: {e}")
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        logging.info("CLI terminated by user")
-
-if __name__ == "__main__":
-    main()

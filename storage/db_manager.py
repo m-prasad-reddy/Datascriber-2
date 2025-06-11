@@ -1,11 +1,13 @@
 import json
 import sqlite3
+import pandas as pd
+import pyodbc
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 from contextlib import contextmanager
 from config.utils import ConfigUtils, ConfigError
-from config.logging_setup import LoggingSetup
+import logging
 
 class DBError(Exception):
     """Custom exception for database-related errors."""
@@ -26,19 +28,19 @@ class DBManager:
         sqlserver_conn_pool (List[pyodbc.Connection]): SQL Server connection pool.
     """
 
-    def __init__(self, config_utils: ConfigUtils):
+    def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
         """Initialize DBManager.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
+            logger (logging.Logger): System logger.
 
         Raises:
             DBError: If initialization fails.
         """
         self.config_utils = config_utils
+        self.logger = logger
         try:
-            self.logging_setup = LoggingSetup.get_instance(self.config_utils)
-            self.logger = self.logging_setup.get_logger("db", "system")
             self.sqlite_conn = None
             self.datasource = None
             self.sqlite_db_path = None
@@ -66,9 +68,10 @@ class DBManager:
             if not all(key in datasource["connection"] for key in conn_keys):
                 self.logger.error("Missing required connection keys for SQL Server")
                 raise DBError("Missing required connection keys for SQL Server")
-        self.datasource = datasource
-        self.sqlite_db_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / "datascriber.db"
-        self.logger.debug(f"Set datasource: {datasource['name']}")
+        if self.datasource != datasource:
+            self.datasource = datasource
+            self.sqlite_db_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / "datascriber.db"
+            self.logger.debug(f"Set datasource: {datasource['name']}")
 
     def _init_sqlite_connection(self) -> None:
         """Initialize SQLite connection and create tables.
@@ -166,6 +169,7 @@ class DBManager:
                 """
             )
         ]
+        cursor = None
         try:
             cursor = self.sqlite_conn.cursor()
             for _, create_query in tables:
@@ -177,7 +181,8 @@ class DBManager:
             self.logger.error(f"Failed to create SQLite tables: {str(e)}")
             raise DBError(f"Failed to create SQLite tables: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     @contextmanager
     def get_connection(self) -> pyodbc.Connection:
@@ -192,7 +197,6 @@ class DBManager:
         if not self.datasource:
             self.logger.error("Datasource not set")
             raise DBError("Datasource not set")
-        import pyodbc
         conn = None
         try:
             if self.sqlserver_conn_pool:
@@ -246,7 +250,6 @@ class DBManager:
         Raises:
             DBError: If query execution fails.
         """
-        import pandas as pd
         self._set_datasource(datasource)
         if datasource["type"] != "sqlserver":
             self.logger.error("Query execution only supported for SQL Server")
@@ -274,7 +277,6 @@ class DBManager:
         Raises:
             DBError: If metadata fetching or saving fails.
         """
-        import pandas as pd
         self._set_datasource(datasource)
         if datasource["type"] != "sqlserver":
             self.logger.error("Metadata fetching only supported for SQL Server")
@@ -283,6 +285,7 @@ class DBManager:
         date_format = llm_config["prompt_settings"]["validation"].get("date_formats", [{}])[0].get("strftime", "YYYY-MM-DD")
         metadata = {"schema": schema, "delimiter": "\t", "tables": {}}
         rich_metadata = {"schema": schema, "delimiter": "\t", "tables": {}}
+        cursor = None
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -366,6 +369,9 @@ class DBManager:
         except (pyodbc.Error, json.JSONEncodeError) as e:
             self.logger.error(f"Failed to fetch SQL Server metadata for schema {schema}: {str(e)}")
             raise DBError(f"Failed to fetch SQL Server metadata: {str(e)}")
+        finally:
+            if cursor:
+                cursor.close()
 
     def get_metadata(self, datasource: Dict, schema: str) -> Dict:
         """Load metadata for a schema, preferring rich metadata.
@@ -382,7 +388,8 @@ class DBManager:
         """
         self._set_datasource(datasource)
         try:
-            return self.config_utils.load_metadata(datasource["name"], schema)
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema])
+            return metadata.get(schema, {})
         except ConfigError as e:
             self.logger.error(f"Failed to load metadata for schema {schema}: {str(e)}")
             raise DBError(f"Failed to load metadata: {str(e)}")
@@ -401,8 +408,9 @@ class DBManager:
         self._init_sqlite_connection()
         rich_metadata_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / f"metadata_data_{schema}_rich.json"
         if not rich_metadata_path.exists():
-            self.logger.error(f"Rich metadata file not found: {rich_metadata_path}")
-            raise DBError(f"Rich metadata file not found: {rich_metadata_path}")
+            self.logger.warning(f"Rich metadata file not found: {rich_metadata_path}")
+            return
+        cursor = None
         try:
             with open(rich_metadata_path, "r") as f:
                 rich_metadata = json.load(f)
@@ -428,42 +436,56 @@ class DBManager:
             self.logger.error(f"Failed to update rich metadata for schema {schema}: {str(e)}")
             raise DBError(f"Failed to update rich metadata: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
-    def validate_metadata(self, datasource: Dict, schema: str) -> bool:
-        """Validate metadata existence for a schema.
+    def validate_metadata(self, datasource: Dict, schemas: List[str]) -> bool:
+        """Validate metadata existence for tables across schemas.
 
         Args:
             datasource (Dict): Datasource configuration.
-            schema (str): Schema name.
+            schemas (List[str]): List of schema names.
 
         Returns:
-            bool: True if valid, False otherwise.
+            bool: True if valid metadata exists, False otherwise.
 
         Raises:
             DBError: If validation fails critically.
         """
         self._set_datasource(datasource)
+        cursor = None
         try:
-            metadata = self.get_metadata(datasource, schema)
-            if not metadata.get("tables"):
+            metadata = self.config_utils.load_metadata(datasource["name"], schemas)
+            valid = False
+            for schema in schemas:
+                if metadata.get(schema, {}).get("tables"):
+                    valid = True
+                    continue
                 self.logger.warning(f"No metadata tables found for schema {schema}")
                 if datasource["type"] == "sqlserver":
                     self.fetch_metadata(datasource, schema, generate_rich_template=True)
-                    return bool(self.get_metadata(datasource, schema).get("tables"))
+                    metadata = self.get_metadata(datasource, schema)
+                    if metadata.get("tables"):
+                        valid = True
+            if not valid and not datasource["connection"].get("tables"):
                 return False
             self._init_sqlite_connection()
             cursor = self.sqlite_conn.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) FROM rich_metadata
-                WHERE datasource_name = ? AND schema_name = ?
-            """, (datasource["name"], schema))
-            return cursor.fetchone()[0] > 0 or bool(metadata.get("tables"))
+            for schema in schemas:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM rich_metadata
+                    WHERE datasource_name = ? AND schema_name = ?
+                """, (datasource["name"], schema))
+                if cursor.fetchone()[0] > 0:
+                    valid = True
+            self.logger.debug(f"Metadata validation completed for schemas: {schemas}")
+            return valid
         except (sqlite3.Error, ConfigError) as e:
-            self.logger.error(f"Failed to validate metadata for schema {schema}: {str(e)}")
+            self.logger.error(f"Failed to validate metadata for schemas {schemas}: {str(e)}")
             raise DBError(f"Failed to validate metadata: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def store_training_data(self, datasource: Dict, data: List[Dict]) -> None:
         """Store training data in SQLite.
@@ -486,6 +508,7 @@ class DBManager:
                 extracted_values, placeholders, relevant_sql, scenario_id, is_slm_trained, timestamp
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
+        cursor = None
         try:
             cursor = self.sqlite_conn.cursor()
             processed_rows = 0
@@ -515,7 +538,8 @@ class DBManager:
             self.logger.error(f"Failed to store training data for {datasource['name']}: {str(e)}")
             raise DBError(f"Failed to store training data: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def store_rejected_query(self, datasource: Dict, query: str, schema: str, reason: str, user: str, error_type: str) -> None:
         """Store rejected query in SQLite.
@@ -533,6 +557,7 @@ class DBManager:
         """
         self._set_datasource(datasource)
         self._init_sqlite_connection()
+        cursor = None
         try:
             cursor = self.sqlite_conn.cursor()
             cursor.execute("""
@@ -546,7 +571,8 @@ class DBManager:
             self.logger.error(f"Failed to store rejected query: {str(e)}")
             raise DBError(f"Failed to store rejected query: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def get_rejected_queries(self, datasource: Dict) -> List[Dict]:
         """Retrieve rejected queries from SQLite.
@@ -562,6 +588,7 @@ class DBManager:
         """
         self._set_datasource(datasource)
         self._init_sqlite_connection()
+        cursor = None
         try:
             cursor = self.sqlite_conn.cursor()
             cursor.execute("""
@@ -589,7 +616,8 @@ class DBManager:
             self.logger.error(f"Failed to retrieve rejected queries: {str(e)}")
             raise DBError(f"Failed to retrieve rejected queries: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def update_rejected_query(self, datasource: Dict, query_id: int, status: str) -> None:
         """Update the status of a rejected query.
@@ -604,6 +632,7 @@ class DBManager:
         """
         self._set_datasource(datasource)
         self._init_sqlite_connection()
+        cursor = None
         try:
             cursor = self.sqlite_conn.cursor()
             cursor.execute("""
@@ -621,7 +650,8 @@ class DBManager:
             self.logger.error(f"Failed to update rejected query ID {query_id}: {str(e)}")
             raise DBError(f"Failed to update rejected query: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def delete_rejected_query(self, datasource: Dict, query_id: int) -> None:
         """Delete a rejected query from SQLite.
@@ -635,6 +665,7 @@ class DBManager:
         """
         self._set_datasource(datasource)
         self._init_sqlite_connection()
+        cursor = None
         try:
             cursor = self.sqlite_conn.cursor()
             cursor.execute("""
@@ -651,7 +682,8 @@ class DBManager:
             self.logger.error(f"Failed to delete rejected query ID {query_id}: {str(e)}")
             raise DBError(f"Failed to delete rejected query: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def store_model_metrics(self, datasource: Dict, metrics: Dict) -> None:
         """Store model metrics in SQLite.
@@ -665,6 +697,7 @@ class DBManager:
         """
         self._set_datasource(datasource)
         self._init_sqlite_connection()
+        cursor = None
         try:
             cursor = self.sqlite_conn.cursor()
             cursor.execute("""
@@ -682,7 +715,8 @@ class DBManager:
             self.logger.error(f"Failed to store model metrics: {str(e)}")
             raise DBError(f"Failed to store model metrics: {str(e)}")
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
 
     def close_connections(self) -> None:
         """Close SQLite and SQL Server connections."""
