@@ -276,7 +276,7 @@ class Interface:
                 self.logger.error(f"Datasource configuration not found: {name}")
                 raise CLIError("Datasource configuration not found")
             schemas = self.datasource["connection"].get("schemas", ["default"])
-            self.logger.debug(f"Validating metadata for datasource {name} with schemas {schemas}")
+            self.logger.debug(f"Validating metadata for datasource {name} with schemas {schemas} (type: {type(schemas)})")
             if not schemas and not self.datasource["connection"].get("tables"):
                 self.logger.error(f"No schemas or tables configured for datasource: {name}")
                 raise CLIError("No schemas or tables configured")
@@ -347,7 +347,7 @@ class Interface:
             self.logger.error("No datasource selected")
             raise CLIError("No datasource selected")
         schemas = self.datasource["connection"].get("schemas", ["default"])
-        self.logger.debug(f"Processing NLQ '{nlq}' for schemas {schemas}")
+        self.logger.debug(f"Processing NLQ '{nlq}' for schemas {schemas} (type: {type(schemas)})")
         try:
             entities = nlp_processor.process_query(nlq, schemas[0]).get("entities", {})
             result = self.orchestrator.process_nlq(self.datasource, nlq, schemas=schemas, entities=entities)
@@ -395,6 +395,7 @@ class Interface:
             raise CLIError("No datasource selected")
         try:
             schemas = self.datasource["connection"].get("schemas", ["default"])
+            self.logger.debug(f"Refreshing metadata for schemas {schemas} (type: {type(schemas)})")
             if not schemas and not self.datasource["connection"].get("tables"):
                 raise CLIError("No schemas or tables configured in db_configurations.json")
             if self.orchestrator.refresh_metadata(self.datasource, schemas):

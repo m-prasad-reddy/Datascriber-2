@@ -278,6 +278,7 @@ class DBManager:
             DBError: If metadata fetching or saving fails.
         """
         self._set_datasource(datasource)
+        self.logger.debug(f"Fetching metadata for schema {schema} in datasource {datasource['name']}")
         if datasource["type"] != "sqlserver":
             self.logger.error("Metadata fetching only supported for SQL Server")
             raise DBError("Metadata fetching only supported for SQL Server")
@@ -387,8 +388,10 @@ class DBManager:
             DBError: If metadata loading fails.
         """
         self._set_datasource(datasource)
+        self.logger.debug(f"Loading metadata for schema {schema} in datasource {datasource['name']} (type: {type(schema)})")
         try:
             metadata = self.config_utils.load_metadata(datasource["name"], [schema])
+            self.logger.debug(f"Retrieved metadata for schema {schema} in {datasource['name']}")
             return metadata.get(schema, {})
         except ConfigError as e:
             self.logger.error(f"Failed to load metadata for schema {schema}: {str(e)}")
@@ -439,12 +442,12 @@ class DBManager:
             if cursor:
                 cursor.close()
 
-    def validate_metadata(self, datasource: Dict, schemas: List[str]) -> bool:
-        """Validate metadata existence for tables across schemas.
+    def validate_metadata(self, datasource: Dict, schema: str) -> bool:
+        """Validate metadata existence for tables in a schema.
 
         Args:
             datasource (Dict): Datasource configuration.
-            schemas (List[str]): List of schema names.
+            schema (str): Schema name.
 
         Returns:
             bool: True if valid metadata exists, False otherwise.
@@ -453,35 +456,33 @@ class DBManager:
             DBError: If validation fails critically.
         """
         self._set_datasource(datasource)
+        self.logger.debug(f"Validating metadata for schema {schema} in datasource {datasource['name']} (type: {type(schema)})")
         cursor = None
         try:
-            metadata = self.config_utils.load_metadata(datasource["name"], schemas)
-            valid = False
-            for schema in schemas:
-                if metadata.get(schema, {}).get("tables"):
-                    valid = True
-                    continue
-                self.logger.warning(f"No metadata tables found for schema {schema}")
-                if datasource["type"] == "sqlserver":
-                    self.fetch_metadata(datasource, schema, generate_rich_template=True)
-                    metadata = self.get_metadata(datasource, schema)
-                    if metadata.get("tables"):
-                        valid = True
-            if not valid and not datasource["connection"].get("tables"):
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema])
+            if metadata.get(schema, {}).get("tables"):
+                self.logger.debug(f"Valid metadata found for schema {schema}")
+                return True
+            self.logger.warning(f"No metadata tables found for schema {schema}")
+            if datasource["type"] == "sqlserver":
+                self.fetch_metadata(datasource, schema, generate_rich_template=True)
+                metadata = self.get_metadata(datasource, schema)
+                if metadata.get("tables"):
+                    return True
+            if not datasource["connection"].get("tables"):
                 return False
             self._init_sqlite_connection()
             cursor = self.sqlite_conn.cursor()
-            for schema in schemas:
-                cursor.execute("""
-                    SELECT COUNT(*) FROM rich_metadata
-                    WHERE datasource_name = ? AND schema_name = ?
-                """, (datasource["name"], schema))
-                if cursor.fetchone()[0] > 0:
-                    valid = True
-            self.logger.debug(f"Metadata validation completed for schemas: {schemas}")
-            return valid
+            cursor.execute("""
+                SELECT COUNT(*) FROM rich_metadata
+                WHERE datasource_name = ? AND schema_name = ?
+            """, (datasource["name"], schema))
+            if cursor.fetchone()[0] > 0:
+                self.logger.debug(f"Rich metadata found for schema {schema}")
+                return True
+            return False
         except (sqlite3.Error, ConfigError) as e:
-            self.logger.error(f"Failed to validate metadata for schemas {schemas}: {str(e)}")
+            self.logger.error(f"Failed to validate metadata for schema {schema}: {str(e)}")
             raise DBError(f"Failed to validate metadata: {str(e)}")
         finally:
             if cursor:
@@ -639,7 +640,7 @@ class DBManager:
                 UPDATE rejected_queries
                 SET reason = ?, timestamp = ?
                 WHERE id = ? AND datasource = ?
-            """, (f"Status: {status}", datetime.now().isoformat(), query_id, datasource["name"]))
+            """, (f"status: {status}", datetime.now().isoformat(), query_id, datasource["name"]))
             if cursor.rowcount == 0:
                 self.logger.warning(f"No rejected query found with ID {query_id} for {datasource['name']}")
                 raise DBError(f"No rejected query found with ID {query_id}")
@@ -673,13 +674,13 @@ class DBManager:
                 WHERE id = ? AND datasource = ?
             """, (query_id, datasource["name"]))
             if cursor.rowcount == 0:
-                self.logger.warning(f"No rejected query found with ID {query_id} for {datasource['name']}")
+                self.logger.warning(f"Error deleting row with ID {query_id} for {datasource['name']}")
                 raise DBError(f"No rejected query found with ID {query_id}")
             self.sqlite_conn.commit()
-            self.logger.info(f"Deleted rejected query ID {query_id} for {datasource['name']}")
+            self.logger.info(f"Deleted row ID {query_id} for {datasource['name']}")
         except sqlite3.Error as e:
             self.sqlite_conn.rollback()
-            self.logger.error(f"Failed to delete rejected query ID {query_id}: {str(e)}")
+            self.logger.error(f"Failed to delete row ID {query_id}: {str(e)}")
             raise DBError(f"Failed to delete rejected query: {str(e)}")
         finally:
             if cursor:
@@ -724,7 +725,7 @@ class DBManager:
             if self.sqlite_conn:
                 self.sqlite_conn.commit()
                 self.sqlite_conn.close()
-                self.logger.debug(f"Closed SQLite connection: {self.sqlite_db_path}")
+                self.logger.debug(f"Closed SQLite database: {self.sqlite_db_path}")
                 self.sqlite_conn = None
             for conn in self.sqlserver_conn_pool:
                 if not conn.closed:
