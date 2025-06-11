@@ -2,6 +2,7 @@ import json
 import pandas as pd
 from typing import Dict, Optional, List
 import logging
+import traceback
 from config.utils import ConfigUtils, ConfigError
 from storage.db_manager import DBManager
 from storage.storage_manager import StorageManager
@@ -53,7 +54,7 @@ class Orchestrator:
             self.datasource = None
             self.logger.debug("Initialized Orchestrator")
         except ConfigError as e:
-            self.logger.error(f"Failed to initialize Orchestrator: {str(e)}")
+            self.logger.error(f"Failed to initialize Orchestrator: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to initialize Orchestrator: {str(e)}")
 
     def login(self, username: str) -> bool:
@@ -73,7 +74,7 @@ class Orchestrator:
             self.logger.error(f"Invalid username: {username}")
             return False
         except Exception as e:
-            self.logger.error(f"Login failed for {username}: {str(e)}")
+            self.logger.error(f"Login failed for {username}: {str(e)}\n{traceback.format_exc()}")
             return False
 
     def select_datasource(self, datasource_name: str) -> bool:
@@ -98,7 +99,7 @@ class Orchestrator:
             self.logger.debug(f"Selected datasource {datasource_name} with schemas {schemas}")
             return True
         except ConfigError as e:
-            self.logger.error(f"Failed to select datasource {datasource_name}: {str(e)}")
+            self.logger.error(f"Failed to select datasource {datasource_name}: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to select datasource: {str(e)}")
 
     def validate_metadata(self, datasource: Dict, schemas: Optional[List[str]] = None) -> bool:
@@ -149,8 +150,8 @@ class Orchestrator:
                         return False
             self.logger.debug(f"Metadata validation completed for schemas: {schemas}")
             return valid
-        except ConfigError as e:
-            self.logger.error(f"Failed to validate metadata: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to validate metadata: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to validate metadata: {str(e)}")
 
     def process_nlq(self, datasource: Dict, nlq: str, schemas: Optional[List[str]] = None, entities: Optional[Dict] = None) -> Optional[Dict]:
@@ -174,12 +175,15 @@ class Orchestrator:
             data_executor = DataExecutor(self.config_utils, self.logger)
             self.datasource = datasource
             schemas = schemas or datasource["connection"].get("schemas", ["default"])
+            if not isinstance(schemas, list) or not all(isinstance(s, str) and s.strip() for s in schemas):
+                self.logger.error(f"Invalid schemas input: {schemas}, type: {type(schemas)}")
+                raise OrchestrationError(f"Invalid schemas input: {schemas}")
             self.logger.debug(f"Processing NLQ '{nlq}' for schemas {schemas}")
             if not self.validate_metadata(datasource, schemas):
                 self.notify_admin(datasource, nlq, schemas, "Invalid metadata", entities)
                 return None
             entities = entities or self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource).get("entities", {})
-            tia_result = table_identifier.identify_tables(datasource, nlq, schemas[0])
+            tia_result = table_identifier.identify_tables(datasource, nlq, schemas)
             if not tia_result or not tia_result.get("tables"):
                 self.notify_admin(datasource, nlq, schemas, "No tables identified by TIA", entities)
                 return None
@@ -215,9 +219,9 @@ class Orchestrator:
             prompt_generator.save_training_data(datasource, [training_row])
             self.logger.info(f"Processed NLQ: {nlq}, saved training data")
             return result
-        except ConfigError as e:
+        except Exception as e:
             self.notify_admin(datasource, nlq, schemas, str(e), entities)
-            self.logger.error(f"Failed to process NLQ '{nlq}': {str(e)}")
+            self.logger.error(f"Failed to process NLQ '{nlq}': {str(e)}\n{traceback.format_exc()}")
             return None
 
     def notify_admin(self, datasource: Dict, nlq: str, schemas: List[str], reason: str, entities: Optional[Dict] = None) -> None:
@@ -231,12 +235,13 @@ class Orchestrator:
             entities (Optional[Dict]): Extracted entities.
         """
         try:
+            schema = schemas[0] if schemas and isinstance(schemas, list) and schemas[0] else "unknown"
             self.db_manager.store_rejected_query(
-                datasource, nlq, reason, self.user or "unknown", "NLQProcessingFailure"
+                datasource, nlq, schema, reason, self.user or "unknown", "NLQProcessingFailure"
             )
             self.logger.info(f"Notified admin: Logged rejected query '{nlq}' for schemas {schemas}")
         except Exception as e:
-            self.logger.error(f"Failed to notify admin for query '{nlq}': {str(e)}")
+            self.logger.error(f"Failed to notify admin for query '{nlq}': {str(e)}\n{traceback.format_exc()}")
 
     def map_failed_query(self, datasource: Dict, nlq: str, tables: List[str], columns: List[str], sql: str) -> bool:
         """Map a failed query to tables, columns, and SQL for training.
@@ -263,8 +268,8 @@ class Orchestrator:
             table_identifier.train_manual(datasource, nlq, tables, columns, entities.get("extracted_values", {}), [], sql)
             self.logger.info(f"Mapped failed query '{nlq}'")
             return True
-        except ConfigError as e:
-            self.logger.error(f"Failed to map query '{nlq}': {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to map query '{nlq}': {str(e)}\n{traceback.format_exc()}")
             return False
 
     def refresh_metadata(self, datasource: Dict, schemas: List[str]) -> bool:
@@ -297,8 +302,8 @@ class Orchestrator:
                     self.logger.error(f"Unsupported datasource type: {datasource['type']}")
                     success = False
             return success
-        except ConfigError as e:
-            self.logger.error(f"Failed to refresh metadata for schemas {schemas}: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to refresh metadata for schemas {schemas}: {str(e)}\n{traceback.format_exc()}")
             return False
 
     def train_model(self, datasource: Dict) -> bool:
@@ -324,8 +329,8 @@ class Orchestrator:
                 table_identifier.generate_model(datasource)
                 self.logger.info(f"Generated default prediction model for datasource {datasource['name']}")
             return True
-        except ConfigError as e:
-            self.logger.error(f"Failed to train model: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to train model: {str(e)}\n{traceback.format_exc()}")
             return False
 
     def get_table_columns(self, datasource: Dict, schemas: List[str], table: str) -> List[str]:
@@ -352,5 +357,5 @@ class Orchestrator:
             self.logger.warning(f"Table {table} not found in schemas {schemas}")
             return []
         except ConfigError as e:
-            self.logger.error(f"Failed to get columns for table {table}: {str(e)}")
+            self.logger.error(f"Failed to get columns for table {table}: {str(e)}\n{traceback.format_exc()}")
             return []

@@ -1,24 +1,6 @@
 {
-  "sentence_transformer": {
-    "model_name": "text-embedding-3-small",
-    "deployment": "embedding-model",
-    "enabled": true
-  },
-  "bulk_training": {
-    "enabled": true,
-    "max_rows": 100,
-    "is_slm_trained_field": "IS_SLM_TRAINED",
-    "scenario_id_field": "id"
-  },
-  "confidence_threshold": 0.7,
-  "type_mapping": {
-    "int64": "integer",
-    "float64": "float",
-    "object": "string",
-    "datetime64[ns]": "date",
-    "timestamp": "string",
-    "string": "string",
-    "int32": "integer",
-    "float32": "float"
-  }
+  "model_type": "azure-openai",
+  "model_name": "text-embedding-3-small",
+  "embedding_deployment_name": "embedding-model",
+  "confidence_threshold": 0.7
 }

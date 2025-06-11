@@ -8,6 +8,8 @@ import re
 import spacy
 from config.utils import ConfigUtils, ConfigError
 from config.logging_setup import LoggingSetup
+import traceback
+import httpx
 
 class NLPError(Exception):
     """Custom exception for NLP processing errors."""
@@ -49,7 +51,7 @@ class NLPProcessor:
             self._init_nlp()
             self.logger.debug("Initialized NLPProcessor")
         except ConfigError as e:
-            self.logger.error(f"Failed to initialize NLPProcessor: {str(e)}")
+            self.logger.error(f"Failed to initialize NLPProcessor: {str(e)}\n{traceback.format_exc()}")
             raise NLPError(f"Failed to initialize NLPProcessor: {str(e)}")
 
     def _init_nlp(self) -> None:
@@ -62,7 +64,7 @@ class NLPProcessor:
             self.nlp = spacy.load("en_core_web_sm")
             self.logger.debug("Loaded SpaCy model: en_core_web_sm")
         except ImportError as e:
-            self.logger.error(f"Failed to load SpaCy model: {str(e)}")
+            self.logger.error(f"Failed to load SpaCy model: {str(e)}\n{traceback.format_exc()}")
             raise NLPError(f"Failed to load SpaCy model: {str(e)}")
 
     def _load_synonym_mode(self) -> str:
@@ -115,11 +117,11 @@ class NLPProcessor:
             self.synonym_cache[cache_key] = synonyms
             return synonyms
         except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to load synonyms from {synonym_path}: {str(e)}")
+            self.logger.error(f"Failed to load synonyms from {synonym_path}: {str(e)}\n{traceback.format_exc()}")
             raise NLPError(f"Failed to load synonyms: {str(e)}")
 
     def _generate_dynamic_synonyms(self, term: str, schema: str, datasource: Dict) -> List[str]:
-        """Generate dynamic synonyms using Azure Open AI embeddings.
+        """Generate dynamic synonyms using Azure OpenAI embeddings.
 
         Args:
             term (str): Term to find synonyms for.
@@ -136,14 +138,22 @@ class NLPProcessor:
             llm_config = self.config_utils.load_llm_config()
             azure_config = self.config_utils.load_azure_config()
             model_config = self.config_utils.load_model_config()
+            required_keys = ["endpoint", "api_key", "embedding_deployment_name", "api_version"]
+            missing_keys = [k for k in required_keys if k not in azure_config]
+            if missing_keys:
+                self.logger.error(f"Missing Azure configuration keys: {missing_keys}")
+                raise NLPError(f"Missing Azure configuration keys: {missing_keys}")
+            custom_headers = azure_config.get("custom_auth_headers", {})
+            self.logger.debug(f"Using custom headers for Azure OpenAI client: {custom_headers}")
             client = openai.AzureOpenAI(
                 azure_endpoint=azure_config["endpoint"],
                 api_key=azure_config["api_key"],
-                api_version=llm_config.get("api_version", "2023-10-01-preview")
+                api_version=azure_config["api_version"],
+                http_client=httpx.Client(headers=custom_headers)
             )
             cache_key = f"{datasource['name']}:{schema}"
             if cache_key not in self.embedding_cache:
-                metadata = self.config_utils.load_metadata(datasource["name"], schema)
+                metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
                 candidate_terms = set()
                 for table in metadata.get("tables", {}).values():
                     candidate_terms.add(table["name"])
@@ -154,31 +164,43 @@ class NLPProcessor:
                 for candidate in candidate_terms:
                     for attempt in range(3):
                         try:
+                            self.logger.debug(
+                                f"Generating embedding for candidate '{candidate}' with deployment {azure_config['embedding_deployment_name']}"
+                            )
                             embedding = client.embeddings.create(
-                                model=llm_config.get("embedding_model", "text-embedding-3-small"),
+                                model=azure_config["embedding_deployment_name"],
                                 input=candidate
                             ).data[0].embedding
                             embeddings[candidate] = embedding
                             break
                         except Exception as e:
                             if attempt == 2:
-                                self.logger.warning(f"Failed to embed {candidate} after 3 attempts: {str(e)}")
+                                self.logger.error(
+                                    f"Failed to embed {candidate} after 3 attempts: {str(e)}\n{traceback.format_exc()}"
+                                )
                             continue
                 self.embedding_cache[cache_key] = embeddings
             term_embedding = None
             for attempt in range(3):
                 try:
+                    self.logger.debug(
+                        f"Generating embedding for term '{term}' with deployment {azure_config['embedding_deployment_name']}"
+                    )
                     term_embedding = client.embeddings.create(
-                        model=llm_config.get("embedding_model", "text-embedding-3-small"),
+                        model=azure_config["embedding_deployment_name"],
                         input=term
                     ).data[0].embedding
                     break
                 except Exception as e:
                     if attempt == 2:
-                        self.logger.error(f"Failed to embed term {term} after 3 attempts: {str(e)}")
+                        self.logger.error(
+                            f"Failed to embed term {term} after 3 attempts: {str(e)}\n"
+                            f"Stack trace: {traceback.format_exc()}\n"
+                            f"Deployment: {azure_config['embedding_deployment_name']}"
+                        )
                         raise NLPError(f"Failed to generate embedding for {term}: {str(e)}")
             synonyms = []
-            threshold = model_config.get("confidence_threshold", 0.7)
+            threshold = model_config.get("entities", 0.7)
             for candidate, candidate_embedding in self.embedding_cache[cache_key].items():
                 similarity = numpy.dot(term_embedding, candidate_embedding) / (
                     numpy.linalg.norm(term_embedding) * numpy.linalg.norm(candidate_embedding)
@@ -192,23 +214,23 @@ class NLPProcessor:
             with open(synonym_file, "w") as f:
                 json.dump(synonyms_dict, f, indent=2)
             self.synonym_cache[cache_key] = synonyms_dict
-            self.logger.info(f"Updated dynamic synonyms for schema {schema}")
+            self.logger.info(f"Updated dynamic synonyms for {schema}")
             return synonyms
-        except (KeyError, json.JSONDecodeError) as e:
-            self.logger.error(f"Failed to generate dynamic synonyms for {term}: {str(e)}")
+        except (KeyError, Exception) as e:
+            logging.error(f"Failed to generate dynamic synonyms for {term}: {str(e)}")
             raise NLPError(f"Failed to generate dynamic synonyms: {str(e)}")
 
-    def process_query(self, nlq: str, schema: str, datasource: Dict = None, entities: Dict = None) -> Dict:
-        """Process an NLQ to extract tokens, entities, and values.
+    def process_query(self, nlq: str, schema: str, datasource: Dict = None, optional: Dict = None) -> Dict:
+        """Process an NLQ to retrieve tokens, entities, and values.
 
         Args:
-            nlq (str): Natural language query.
-            schema (str): Schema name.
-            datasource (Dict, optional): Datasource configuration.
-            entities (Dict, optional): Pre-extracted entities from cli/interface.py.
+            nlq (String): Natural language query.
+            schema (String): Schema name.
+            datasource (Dict): Optional datasource configuration.
+            optional (Dict, optional): Pre-extracted entities from cli/interface.py.
 
         Returns:
-            Dict: Dictionary with tokens, entities, and extracted values.
+            Dict: Dictionary containing tokens, entities, and retrieved values.
 
         Raises:
             NLPError: If processing fails.
@@ -227,7 +249,7 @@ class NLPProcessor:
             }
             if entities:
                 for key in combined_entities:
-                    combined_entities[key] = entities.get(key, []) if isinstance(entities.get(key), list) else []
+                    combined_entities[key] = optional.get(key, []) if isinstance(optional.get(key), list) else []
             for label, value in spacy_entities.items():
                 if label == "date":
                     combined_entities["dates"].append(value)
@@ -239,7 +261,7 @@ class NLPProcessor:
                     combined_entities["objects"].append(value)
             extracted_values = {}
             if datasource:
-                metadata = self.config_utils.load_metadata(datasource["name"], schema)
+                metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
                 synonyms = self._load_synonyms(schema, datasource)
                 for token in tokens:
                     mapped_term = self.map_synonyms(token, synonyms, schema, datasource)
@@ -275,7 +297,7 @@ class NLPProcessor:
             self.logger.info(f"Processed NLQ: {nlq}, result: {result}")
             return result
         except (ConfigError, KeyError) as e:
-            self.logger.error(f"Failed to process NLQ '{nlq}' for schema {schema}: {str(e)}")
+            self.logger.error(f"Failed to process NLQ '{nlq}' for schema {schema}: {str(e)}\n{traceback.format_exc()}")
             raise NLPError(f"Failed to process NLQ: {str(e)}")
 
     def map_synonyms(self, term: str, synonyms: Dict[str, List[str]], schema: str, datasource: Dict) -> str:
@@ -310,7 +332,7 @@ class NLPProcessor:
             self.logger.debug(f"No synonym mapping for term: {term}")
             return term
         except NLPError as e:
-            self.logger.error(f"Failed to map synonyms for term '{term}' in schema {schema}: {str(e)}")
+            self.logger.error(f"Failed to map synonyms for term '{term}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
             raise
 
     def clear_cache(self, datasource_name: str = None, schema: str = None) -> None:
