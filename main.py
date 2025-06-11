@@ -1,6 +1,7 @@
 import argparse
 import sys
 import json
+import warnings
 from pathlib import Path
 from typing import Optional
 from config.utils import ConfigUtils, ConfigError
@@ -12,6 +13,9 @@ from nlp.nlp_processor import NLPProcessor, NLPError
 from core.orchestrator import Orchestrator
 import platform
 import pkg_resources
+
+# Suppress pkg_resources deprecation warning
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
 
 __version__ = "1.1.0"
 
@@ -61,9 +65,17 @@ def initialize_components(config_utils: ConfigUtils, logger, datasource_name: Op
     """
     try:
         db_manager = DBManager(config_utils)
+        logger.debug("Initialized DBManager")
+        
         storage_manager = StorageManager(config_utils)
-        nlp_processor = NLPProcessor(config_utils)
-        orchestrator = Orchestrator(config_utils, db_manager, storage_manager, nlp_processor)
+        logger.debug("Initialized StorageManager")
+        
+        nlp_processor = NLPProcessor(config_utils, logger)  # Added logger argument
+        logger.debug("Initialized NLPProcessor")
+        
+        # Temporary fix: Pass only config_utils until orchestrator.py is fixed
+        orchestrator = Orchestrator(config_utils)  # TODO: Update to pass db_manager, storage_manager, nlp_processor after fixing orchestrator.py
+        logger.debug("Initialized Orchestrator")
 
         # Validate datasource if specified
         if datasource_name:
@@ -156,7 +168,8 @@ def main():
     finally:
         if 'db_manager' in locals():
             cleanup_components(db_manager, storage_manager, nlp_processor, logger)
-        logger.info("Datascriber shutdown complete")
+        if 'logger' in locals():
+            logger.info("Datascriber shutdown complete")
 
 if __name__ == "__main__":
     main()
