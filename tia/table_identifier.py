@@ -8,6 +8,7 @@ from config.utils import ConfigUtils, ConfigError
 from openai import AzureOpenAI
 from nlp.nlp_processor import NLPProcessor
 from storage.db_manager import DBManager
+import httpx
 
 class TIAError(Exception):
     """Custom exception for Table Identifier Agent errors."""
@@ -342,7 +343,7 @@ class TableIdentifier:
             if not result["tables"]:
                 self.logger.debug(f"No tables identified for NLQ: {nlq} in schemas {schemas}")
                 return None
-            result["ddl"] = self._generate_ddl([t.split(".")[1] for t in result["tables"]], schemas[0])
+            result["ddl"] = self._generate_ddl([t.split(".")[-1] for t in result["tables"]], schemas[0])
             self.logger.debug(f"Generated metadata-based identification for NLQ: {nlq}")
             return result
         except TIAError as e:
@@ -369,12 +370,13 @@ class TableIdentifier:
                 self.logger.error(f"Missing Azure configuration keys: {missing_keys}")
                 raise TIAError(f"Missing Azure configuration keys: {missing_keys}")
             self.logger.debug(f"Initializing AzureOpenAI with endpoint={azure_config['endpoint']}, model={self.model_name}")
-            # Note: If proxies are required, set HTTP_PROXY/HTTPS_PROXY environment variables
-            # or pass a custom http_client, e.g., httpx.Client(proxies="http://proxy.example.com:8080")
+            # Note: If proxies are required, set HTTP_PROXY/HTTPS_PROXY environment variables.
+            # Using explicit http_client to avoid httpx proxy injection issues.
             client = AzureOpenAI(
                 api_key=azure_config["api_key"],
                 api_version="2023-12-01-preview",
-                azure_endpoint=azure_config["endpoint"]
+                azure_endpoint=azure_config["endpoint"],
+                http_client=httpx.Client()  # Explicitly disable proxies
             )
             if isinstance(text, str):
                 text = [text]
