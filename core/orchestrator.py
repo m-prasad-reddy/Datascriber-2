@@ -1,8 +1,11 @@
 import json
 import pandas as pd
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 import logging
 import traceback
+import sqlite3
+import re
+from pathlib import Path
 from config.utils import ConfigUtils, ConfigError
 from storage.db_manager import DBManager
 from storage.storage_manager import StorageManager
@@ -52,7 +55,7 @@ class Orchestrator:
         try:
             self.user = None
             self.datasource = None
-            self.logger.debug("Initialized Orchestrator")
+            self.logger.debug("Initialized Orchestrator (version: 2025-06-12)")
         except ConfigError as e:
             self.logger.error(f"Failed to initialize Orchestrator: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to initialize Orchestrator: {str(e)}")
@@ -107,20 +110,20 @@ class Orchestrator:
 
         Args:
             datasource (Dict): Datasource configuration.
-            schemas (Optional[List[str]]): List of schema names. If None, validates all configured schemas.
+            schemas (Optional[List[str]]): List of schema names. If None, validates all.
 
         Returns:
             bool: True if metadata valid, False otherwise.
 
         Raises:
-            OrchestrationError: If validation fails critically.
+            OrchestrationError: If validation fails.
         """
         try:
             self.datasource = datasource
             schemas = schemas or datasource["connection"].get("schemas", [])
             if not isinstance(schemas, list):
-                self.logger.warning(f"Invalid schemas input: {schemas}, defaulting to ['default']")
-                schemas = ["default"]
+                self.logger.warning(f"Invalid schemas input: {schemas}, defaulting to ['static']")
+                schemas = ["static"]
             if not schemas:
                 self.logger.error("No schemas configured")
                 return False
@@ -133,7 +136,7 @@ class Orchestrator:
                 if datasource["type"] == "sqlserver":
                     if not self.db_manager.validate_metadata(datasource, schema):
                         if self.user == "admin":
-                            self.db_manager.fetch_metadata(datasource, schema, generate_rich_template=True)
+                            self.db_manager.fetch_metadata(datasource, schema)
                             valid &= self.db_manager.validate_metadata(datasource, schema)
                         else:
                             valid = False
@@ -144,15 +147,119 @@ class Orchestrator:
                     valid = False
                 if not valid:
                     self.logger.warning(f"Metadata validation failed for schema {schema}")
-                    if self.user == "datauser":
-                        self.user = None
-                        self.datasource = None
-                        return False
+                    return False
             self.logger.debug(f"Metadata validation completed for schemas: {schemas}")
             return valid
         except Exception as e:
             self.logger.error(f"Failed to validate metadata: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to validate metadata: {str(e)}")
+
+    def _get_next_scenario_id(self, datasource: Dict) -> str:
+        """Generate the next scenario_id for training data as a string.
+
+        Queries the training_data table in datascriber.db to find the maximum scenario_id,
+        parses the numeric part, and returns a formatted string (e.g., 'SCN_000001').
+
+        Args:
+            datasource (Dict): Datasource configuration.
+
+        Returns:
+            str: Next scenario_id (e.g., 'SCN_000001').
+
+        Raises:
+            OrchestrationError: If database query fails.
+        """
+        try:
+            # Use dynamic path from config_utils
+            db_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / "datascriber.db"
+            self.logger.debug(f"Accessing database at {db_path}")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(scenario_id) FROM training_data")
+            max_id = cursor.fetchone()[0]
+            if max_id and isinstance(max_id, str) and max_id.startswith("SCN_"):
+                # Extract numeric part (e.g., '000001' from 'SCN_000001')
+                match = re.match(r"SCN_(\d+)", max_id)
+                if match:
+                    numeric_part = int(match.group(1))
+                    next_numeric = numeric_part + 1
+                else:
+                    self.logger.warning(f"Invalid scenario_id format: {max_id}, defaulting to 1")
+                    next_numeric = 1
+            else:
+                next_numeric = 1
+            # Format as SCN_000001
+            next_id = f"SCN_{next_numeric:06d}"
+            conn.close()
+            self.logger.debug(f"Generated next scenario_id: {next_id} for datasource {datasource['name']}")
+            return next_id
+        except Exception as e:
+            self.logger.error(f"Failed to generate scenario_id for database at {db_path}: {str(e)}\n{traceback.format_exc()}")
+            raise OrchestrationError(f"Failed to generate scenario_id: {str(e)}")
+
+    def _handle_admin(self, datasource: Dict, nlq: str, schema: str, entities: Dict, tia_result: Dict) -> Tuple[List[str], Optional[Dict]]:
+        """Handle admin feedback for table predictions.
+
+        Args:
+            datasource (Dict): Datasource configuration.
+            nlq (str): Natural language query.
+            schema (str): Schema name.
+            entities (Dict): Extracted entities.
+            tia_result (Dict): Table identification result with predicted tables.
+
+        Returns:
+            Tuple[List[str], Optional[Dict]]: Validated tables and training data row (if any).
+        """
+        try:
+            predicted_tables = tia_result.get("tables", [])
+            if not predicted_tables:
+                self.logger.warning(f"No tables identified for NLQ: {nlq}")
+                return [], None
+            # Return predicted tables for CLI to prompt admin
+            self.logger.debug(f"Admin feedback requested for predicted tables: {predicted_tables}")
+            return predicted_tables, None  # CLI will handle prompting and call back with validated tables
+        except Exception as e:
+            self.logger.error(f"Failed to handle admin feedback for NLQ {nlq}: {str(e)}\n{traceback.format_exc()}")
+            return [], None
+
+    def process_admin_feedback(self, datasource: Dict, nlq: str, schema: str, entities: Dict, tia_result: Dict, validated_tables: List[str], is_correct: bool) -> Dict:
+        """Process admin feedback for table predictions and generate training data.
+
+        Args:
+            datasource (Dict): Datasource configuration.
+            nlq (str): Natural language query.
+            schema (str): Schema name.
+            entities (Dict): Extracted entities.
+            tia_result (Dict): Table identification result.
+            validated_tables (List[str]): Tables validated or provided by admin.
+            is_correct (bool): Whether the predicted tables were correct.
+
+        Returns:
+            Dict: Training data row.
+
+        Raises:
+            OrchestrationError: If processing fails.
+        """
+        try:
+            self.logger.debug(f"Processing admin feedback for NLQ: {nlq}, validated tables: {validated_tables}, is_correct: {is_correct}")
+            prompt_generator = PromptGenerator(self.config_utils, self.logger)
+            # Generate a placeholder SQL query for training data
+            sql_query = f"SELECT * FROM {schema}.{validated_tables[0].split('.')[-1]}" if validated_tables else ""
+            # Update tia_result with validated tables
+            updated_tia_result = tia_result.copy()
+            updated_tia_result["tables"] = validated_tables
+            # Generate scenario_id
+            scenario_id = self._get_next_scenario_id(datasource)
+            # Pass scenario_id to generate_training_data
+            training_row = prompt_generator.generate_training_data(
+                datasource, nlq, schema, entities, sql_query, updated_tia_result, scenario_id=scenario_id
+            )
+            prompt_generator.save_training_data(datasource, [training_row])
+            self.logger.info(f"Processed admin feedback for NLQ: {nlq}, validated tables: {validated_tables}, correct: {is_correct}, scenario_id: {scenario_id}")
+            return training_row
+        except Exception as e:
+            self.logger.error(f"Failed to process admin feedback for NLQ {nlq}: {str(e)}\n{traceback.format_exc()}")
+            raise OrchestrationError(f"Failed to process admin feedback: {str(e)}")
 
     def process_nlq(self, datasource: Dict, nlq: str, schemas: Optional[List[str]] = None, entities: Optional[Dict] = None) -> Optional[Dict]:
         """Process a natural language query across multiple schemas.
@@ -174,7 +281,7 @@ class Orchestrator:
             prompt_generator = PromptGenerator(self.config_utils, self.logger)
             data_executor = DataExecutor(self.config_utils, self.logger)
             self.datasource = datasource
-            schemas = schemas or datasource["connection"].get("schemas", ["default"])
+            schemas = schemas or datasource["connection"].get("schemas", ["static"])
             if not isinstance(schemas, list) or not all(isinstance(s, str) and s.strip() for s in schemas):
                 self.logger.error(f"Invalid schemas input: {schemas}, type: {type(schemas)}")
                 raise OrchestrationError(f"Invalid schemas input: {schemas}")
@@ -188,6 +295,11 @@ class Orchestrator:
                 self.notify_admin(datasource, nlq, schemas, "No tables identified by TIA", entities)
                 return None
             tia_result["entities"] = entities
+            # Handle admin feedback
+            if self.user == "admin":
+                predicted_tables, _ = self._handle_admin(datasource, nlq, schemas[0], entities, tia_result)
+                # CLI will call process_admin_feedback with validated tables
+                return {"predicted_tables": predicted_tables, "tia_result": tia_result, "entities": entities}
             system_prompt = prompt_generator.generate_system_prompt(datasource, schemas)
             user_prompt = prompt_generator.generate_user_prompt(datasource, nlq, schemas, entities, tia_result)
             sample_data, csv_path, sql_query = data_executor.execute_query(
@@ -213,11 +325,13 @@ class Orchestrator:
                 "sample_data": sample_data.to_dict(orient="records") if sample_data is not None else [],
                 "csv_path": csv_path
             }
+            # Generate scenario_id for training data
+            scenario_id = self._get_next_scenario_id(datasource)
             training_row = prompt_generator.generate_training_data(
-                datasource, nlq, schemas[0], entities, sql_query, tia_result
+                datasource, nlq, schemas[0], entities, sql_query, tia_result, scenario_id=scenario_id
             )
             prompt_generator.save_training_data(datasource, [training_row])
-            self.logger.info(f"Processed NLQ: {nlq}, saved training data")
+            self.logger.info(f"Processed NLQ: {nlq}, saved training data with scenario_id: {scenario_id}")
             return result
         except Exception as e:
             self.notify_admin(datasource, nlq, schemas, str(e), entities)
@@ -260,13 +374,15 @@ class Orchestrator:
             table_identifier = TableIdentifier(self.config_utils, self.logger)
             prompt_generator = PromptGenerator(self.config_utils, self.logger)
             self.datasource = datasource
-            entities = self.nlp_processor.process_query(nlq, "default", datasource=datasource).get("entities", {})
+            entities = self.nlp_processor.process_query(nlq, "static", datasource=datasource).get("entities", {})
+            # Generate scenario_id for training data
+            scenario_id = self._get_next_scenario_id(datasource)
             training_row = prompt_generator.generate_training_data(
-                datasource, nlq, "default", entities, sql, {"tables": tables, "columns": columns}
+                datasource, nlq, "static", entities, sql, {"tables": tables, "columns": columns}, scenario_id=scenario_id
             )
             prompt_generator.save_training_data(datasource, [training_row])
             table_identifier.train_manual(datasource, nlq, tables, columns, entities.get("extracted_values", {}), [], sql)
-            self.logger.info(f"Mapped failed query '{nlq}'")
+            self.logger.info(f"Mapped failed query '{nlq}' with scenario_id: {scenario_id}")
             return True
         except Exception as e:
             self.logger.error(f"Failed to map query '{nlq}': {str(e)}\n{traceback.format_exc()}")
@@ -293,10 +409,10 @@ class Orchestrator:
                     self.logger.warning(f"Skipping invalid schema: {schema}")
                     continue
                 if datasource["type"] == "sqlserver":
-                    self.db_manager.fetch_metadata(datasource, schema, generate_rich_template=True)
+                    self.db_manager.fetch_metadata(datasource, schema)
                     self.logger.info(f"Refreshed metadata for schema {schema} (SQL Server)")
                 elif datasource["type"] == "s3":
-                    self.storage_manager.fetch_metadata(datasource, schema)
+                    self.storage_manager.create_metadata(datasource, schema)
                     self.logger.info(f"Refreshed metadata for schema {schema} (S3)")
                 else:
                     self.logger.error(f"Unsupported datasource type: {datasource['type']}")
@@ -327,7 +443,7 @@ class Orchestrator:
                 self.logger.info(f"Trained prediction model for datasource {datasource['name']}")
             else:
                 table_identifier.generate_model(datasource)
-                self.logger.info(f"Generated default prediction model for datasource {datasource['name']}")
+                self.logger.info(f"Generated static prediction model for datasource {datasource['name']}")
             return True
         except Exception as e:
             self.logger.error(f"Failed to train model: {str(e)}\n{traceback.format_exc()}")

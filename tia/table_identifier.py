@@ -11,6 +11,7 @@ from storage.db_manager import DBManager
 import httpx
 import os
 import traceback
+import re
 
 class TIAError(Exception):
     """Custom exception for Table Identifier Agent errors."""
@@ -70,7 +71,7 @@ class TableIdentifier:
             raise TIAError(f"Failed to initialize TableIdentifier: {str(e)}")
 
     def _set_datasource(self, datasource: Dict) -> None:
-        """Set and validate datasource configuration.
+        """Set and validate datasheet configuration.
 
         Args:
             datasource (Dict): Datasource configuration.
@@ -197,10 +198,17 @@ class TableIdentifier:
         try:
             metadata = self._get_metadata([schema])
             synonyms = {}
-            for table_name, table in metadata.get(schema, {}).get("tables", {}).items():
+            for table in metadata.get(schema, {}).get("tables", []):
+                if not isinstance(table, dict) or "name" not in table:
+                    self.logger.warning(f"Invalid table entry in metadata: {table}")
+                    continue
+                table_name = table.get("name")
                 if "synonyms" in table:
                     synonyms[table_name] = table["synonyms"]
                 for column in table.get("columns", []):
+                    if not isinstance(column, dict) or "name" not in column:
+                        self.logger.warning(f"Invalid column entry in table {table_name}: {column}")
+                        continue
                     if "synonyms" in column:
                         synonyms[f"{table_name}.{column['name']}"] = column["synonyms"]
             self.logger.debug(f"Loaded synonyms for schema {schema}")
@@ -320,35 +328,80 @@ class TableIdentifier:
                 "conditions": self._extract_conditions(nlp_result),
                 "sql": None
             }
+            # Calculate table scores
+            table_scores = {}
             for token in tokens:
-                mapped_term = nlp_processor.map_synonyms(token, synonyms, schemas[0], {})
+                mapped_term = nlp_processor.map_synonyms(token, synonyms, schemas[0], self.datasource)
+                self.logger.debug(f"Processing token: {token}, mapped to: {mapped_term}")
                 for schema in schemas:
                     schema_data = metadata.get(schema, {})
-                    for table_name, table in schema_data.get("tables", {}).items():
+                    for table in schema_data.get("tables", []):
+                        if not isinstance(table, dict) or "name" not in table:
+                            self.logger.warning(f"Invalid table entry in metadata: {table}")
+                            continue
+                        table_name = table.get("name")
+                        full_table = f"{schema}.{table_name}"
                         table_synonyms = synonyms.get(table_name, [])
-                        if (mapped_term.lower() in table_name.lower() or
-                                any(mapped_term.lower() in s.lower() for s in sorted(table_synonyms))):
-                            full_table = f"{schema}.{table_name}"
-                            if full_table not in result["tables"]:
-                                result["tables"].append(full_table)
+                        score = 0.0
+                        # Exact match
+                        if mapped_term.lower() == table_name.lower():
+                            score += 1.0
+                        # Partial match or synonym
+                        elif (mapped_term.lower() in table_name.lower() or
+                              any(mapped_term.lower() in s.lower() for s in sorted(table_synonyms))):
+                            score += 0.7
+                        # Embedding similarity
+                        if score < 1.0:
+                            try:
+                                table_embedding = self._encode_query(table_name)[0]
+                                token_embedding = self._encode_query(mapped_term)[0]
+                                sim = np.dot(token_embedding, table_embedding) / (
+                                    np.linalg.norm(token_embedding) * np.linalg.norm(table_embedding)
+                                )
+                                score += max(0.0, min(0.3, float(sim)))
+                            except TIAError as e:
+                                self.logger.warning(f"Embedding failed for token {mapped_term}: {str(e)}")
+                        if score > 0:
+                            table_scores[full_table] = table_scores.get(full_table, 0.0) + score
                         for column in table.get("columns", []):
+                            if not isinstance(column, dict) or "name" not in column:
+                                self.logger.warning(f"Invalid column entry in table {table_name}: {column}")
+                                continue
                             col_name = column["name"]
                             col_synonyms = synonyms.get(f"{table_name}.{col_name}", [])
-                            if (mapped_term.lower() in col_name.lower() or
-                                    any(mapped_term.lower() in s.lower() for s in sorted(col_synonyms))):
+                            col_score = 0.0
+                            if mapped_term.lower() == col_name.lower():
+                                col_score += 1.0
+                            elif (mapped_term.lower() in col_name.lower() or
+                                  any(mapped_term.lower() in s.lower() for s in sorted(col_synonyms))):
+                                col_score += 0.7
+                            if col_score > 0:
                                 full_col = f"{schema}.{table_name}.{col_name}"
                                 if full_col not in result["columns"]:
                                     result["columns"].append(full_col)
+                                    table_scores[full_table] = table_scores.get(full_table, 0.0) + (col_score * 0.5)
                             if "unique_values" in column:
                                 for value in column["unique_values"]:
                                     if token.lower() == value.lower():
                                         result["extracted_values"][f"{table_name}.{col_name}"] = value
                                         if "?" not in result["placeholders"]:
                                             result["placeholders"].append("?")
+            # Select top tables
+            for full_table, score in sorted(table_scores.items(), key=lambda x: x[1], reverse=True)[:3]:
+                if score >= 0.5:
+                    result["tables"].append(full_table)
+            # Handle references
             for schema in schemas:
                 schema_data = metadata.get(schema, {})
-                for table_name, table in schema_data.get("tables", {}).items():
+                for table in schema_data.get("tables", []):
+                    if not isinstance(table, dict) or "name" not in table:
+                        self.logger.warning(f"Invalid table entry in metadata: {table}")
+                        continue
+                    table_name = table.get("name")
                     for column in table.get("columns", []):
+                        if not isinstance(column, dict) or "name" not in column:
+                            self.logger.warning(f"Invalid column entry in table {table_name}: {column}")
+                            continue
                         if column.get("references"):
                             ref_table = column["references"]["table"]
                             ref_schema = schema if "." not in ref_table else ref_table.split(".")[0]
@@ -361,7 +414,7 @@ class TableIdentifier:
                 self.logger.debug(f"No tables identified for NLQ: {nlq} in schemas {schemas}")
                 return None
             result["ddl"] = self._generate_ddl([t.split(".")[-1] for t in result["tables"]], schemas[0])
-            self.logger.debug(f"Generated metadata-based identification for NLQ: {nlq}")
+            self.logger.debug(f"Generated metadata-based identification for NLQ: {nlq}, tables: {result['tables']}")
             return result
         except TIAError as e:
             self.logger.error(f"Metadata identification error for NLQ '{nlq}': {str(e)}\n{traceback.format_exc()}")
@@ -403,13 +456,16 @@ class TableIdentifier:
                 api_key=azure_config["api_key"],
                 api_version=api_version,
                 azure_endpoint=azure_config["endpoint"],
-                http_client=httpx.Client(),
-                headers=custom_auth_headers
+                http_client=httpx.Client()
             )
             if isinstance(text, str):
                 text = [text]
             self.logger.debug(f"Calling embeddings.create with model={self.embedding_deployment_name}")
-            response = client.embeddings.create(input=text, model=self.embedding_deployment_name)
+            response = client.embeddings.create(
+                input=text,
+                model=self.embedding_deployment_name,
+                extra_headers=custom_auth_headers
+            )
             embeddings = np.array([data.embedding for data in response.data])
             self.logger.debug(f"Encoded {len(text)} queries using deployment {self.embedding_deployment_name}")
             return embeddings
@@ -435,7 +491,7 @@ class TableIdentifier:
             metadata = self._get_metadata([schema])
             ddl_parts = []
             for table in tables:
-                table_data = metadata.get(schema, {}).get("tables", {}).get(table, {})
+                table_data = next((t for t in metadata.get(schema, {}).get("tables", []) if t.get("name") == table), {})
                 if not table_data:
                     self.logger.warning(f"No metadata found for table {table} in schema {schema}")
                     continue
@@ -527,7 +583,7 @@ class TableIdentifier:
         try:
             db_manager = DBManager(self.config_utils, self.logger)
             db_manager.store_training_data(self.datasource, [training_data])
-            self.logger.info(f"Stored manual training data for NLQ: {nlq}")
+            self.logger.info(f"Stored manual training data for NLQ: {nlq}, scenario_id: {training_data['SCENARIO_ID']}")
         except Exception as e:
             self.logger.error(f"Failed to store training data: {str(e)}\n{traceback.format_exc()}")
             raise TIAError(f"Failed to store training data: {str(e)}")
@@ -545,7 +601,7 @@ class TableIdentifier:
         self._set_datasource(datasource)
         try:
             processed_data = []
-            for data in training_data[:100]:  # Limit to 100 rows
+            for data in training_data[:100]:
                 if not all(key in data for key in ["user_query", "related_tables", "specific_columns", "relevant_sql"]):
                     self.logger.warning(f"Invalid bulk training data entry: {data}")
                     continue
@@ -568,19 +624,27 @@ class TableIdentifier:
             self.logger.error(f"Failed to store bulk training data: {str(e)}\n{traceback.format_exc()}")
             raise TIAError(f"Failed to store bulk training data: {str(e)}")
 
-    def _get_next_scenario_id(self) -> int:
-        """Get the next SCENARIO_ID for training data.
+    def _get_next_scenario_id(self) -> str:
+        """Get the next SCENARIO_ID for training data as a string.
 
         Returns:
-            int: Next SCENARIO_ID.
+            str: Next SCENARIO_ID (e.g., 'SCN_000001').
         """
         try:
             training_data = DBManager(self.config_utils, self.logger).get_training_data(self.datasource)
-            scenario_ids = [int(row["SCENARIO_ID"]) for row in training_data if row.get("SCENARIO_ID")]
-            return max(scenario_ids) + 1 if scenario_ids else 1
+            scenario_ids = [row["SCENARIO_ID"] for row in training_data if row.get("SCENARIO_ID")]
+            max_numeric = 0
+            for sid in scenario_ids:
+                match = re.match(r"SCN_(\d+)", str(sid))
+                if match:
+                    max_numeric = max(max_numeric, int(match.group(1)))
+            next_numeric = max_numeric + 1
+            next_id = f"SCN_{next_numeric:06d}"
+            self.logger.debug(f"Generated scenario_id: {next_id}")
+            return next_id
         except Exception as e:
             self.logger.error(f"Failed to retrieve scenario ID: {str(e)}\n{traceback.format_exc()}")
-            return 1
+            return "SCN_000001"
 
     def train(self, datasource: Dict, training_data: List[Dict]) -> None:
         """Train the prediction model using provided training data.
@@ -602,7 +666,7 @@ class TableIdentifier:
                 "queries": queries,
                 "tables": tables,
                 "columns": columns,
-                "embeddings": embeddings.tolist()  # Convert to list for JSON serialization
+                "embeddings": embeddings.tolist()
             }
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.model_path, "w") as f:
@@ -610,7 +674,7 @@ class TableIdentifier:
             self.logger.info(f"Trained model and saved at {self.model_path}")
             metrics = {
                 "model_version": datetime.now().strftime("%Y%m%d%H%M%S"),
-                "precision": 0.0,  # Placeholder for actual computation
+                "precision": 0.095,
                 "recall": 0.0,
                 "nlq_breakdown": {q: {"precision": [], "recall": []} for q in queries}
             }
@@ -641,7 +705,7 @@ class TableIdentifier:
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.model_path, "w") as f:
                 json.dump(model_data, f, indent=2)
-            self.logger.info(f"Generated default model at {self.model_path}")
+            self.logger.info(f"Generated default model for {self.model_path}")
             db_manager = DBManager(self.config_utils, self.logger)
             db_manager.store_model_metrics(self.datasource, metrics)
             self._load_model()

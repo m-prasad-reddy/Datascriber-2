@@ -489,7 +489,7 @@ class DBManager:
                 cursor.close()
 
     def store_training_data(self, datasource: Dict, data: List[Dict]) -> None:
-        """Store training data in SQLite.
+        """Store training data in SQLite, updating existing entries if duplicates exist.
 
         Args:
             datasource (Dict): Datasource configuration.
@@ -504,7 +504,7 @@ class DBManager:
         max_rows = llm_config["training_settings"].get("max_rows", 100)
         required_keys = ["db_source_type", "db_name", "user_query", "related_tables", "specific_columns", "relevant_sql", "scenario_id"]
         insert_query = """
-            INSERT INTO training_data (
+            INSERT OR REPLACE INTO training_data (
                 db_source_type, db_name, user_query, related_tables, specific_columns,
                 extracted_values, placeholders, relevant_sql, scenario_id, is_slm_trained, timestamp
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -513,6 +513,7 @@ class DBManager:
         try:
             cursor = self.sqlite_conn.cursor()
             processed_rows = 0
+            updated_rows = 0
             for entry in data[:max_rows]:
                 for key in required_keys:
                     if key not in entry:
@@ -525,6 +526,12 @@ class DBManager:
                     self.logger.error(f"Invalid JSON in training data: {str(e)}")
                     raise DBError(f"Invalid JSON in training data: {str(e)}")
                 is_slm_trained = entry.get("is_slm_trained", False)
+                # Check if row exists to log update vs insert
+                cursor.execute("""
+                    SELECT id FROM training_data
+                    WHERE user_query = ? AND db_name = ?
+                """, (entry["user_query"], entry["db_name"]))
+                exists = cursor.fetchone()
                 cursor.execute(insert_query, (
                     entry["db_source_type"], entry["db_name"], entry["user_query"],
                     entry["related_tables"], entry["specific_columns"], extracted_values,
@@ -532,8 +539,13 @@ class DBManager:
                     is_slm_trained, datetime.now().isoformat()
                 ))
                 processed_rows += 1
+                if exists:
+                    updated_rows += 1
             self.sqlite_conn.commit()
-            self.logger.info(f"Stored {processed_rows} training data entries for {datasource['name']}")
+            self.logger.info(
+                f"Stored {processed_rows} training data entries for {datasource['name']} "
+                f"(inserted: {processed_rows - updated_rows}, updated: {updated_rows})"
+            )
         except sqlite3.Error as e:
             self.sqlite_conn.rollback()
             self.logger.error(f"Failed to store training data for {datasource['name']}: {str(e)}")

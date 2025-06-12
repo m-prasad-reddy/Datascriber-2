@@ -351,6 +351,47 @@ class Interface:
         try:
             entities = nlp_processor.process_query(nlq, schemas[0]).get("entities", {})
             result = self.orchestrator.process_nlq(self.datasource, nlq, schemas=schemas, entities=entities)
+            if self.username == "admin" and result and result.get("predicted_tables"):
+                # Handle admin feedback for table predictions
+                predicted_tables = result["predicted_tables"]
+                tia_result = result["tia_result"]
+                entities = result["entities"]
+                print(f"Predicted tables: {', '.join(predicted_tables)}")
+                while True:
+                    response = input("Are the predicted tables correct? (y/n): ").strip().lower()
+                    if response in ["y", "n"]:
+                        break
+                    print("Please enter 'y' or 'n'.")
+                    self.logger.warning(f"Invalid admin feedback response: {response}")
+                is_correct = response == "y"
+                validated_tables = predicted_tables if is_correct else []
+                if not is_correct:
+                    while True:
+                        tables_input = input("Enter correct tables (comma-separated): ").strip()
+                        if tables_input:
+                            validated_tables = [t.strip() for t in tables_input.split(",")]
+                            if all(t for t in validated_tables):
+                                break
+                            print("Table names cannot be empty.")
+                            self.logger.warning(f"Invalid table input: {tables_input}")
+                        else:
+                            print("Please enter at least one table.")
+                            self.logger.warning("Empty table input")
+                self.logger.debug(f"Admin feedback: is_correct={is_correct}, validated_tables={validated_tables}")
+                # Debug Orchestrator instance before calling process_admin_feedback
+                self.logger.debug(f"Orchestrator type: {type(self.orchestrator)}, methods: {dir(self.orchestrator)}")
+                # Process admin feedback and resume query processing
+                try:
+                    self.orchestrator.process_admin_feedback(
+                        self.datasource, nlq, schemas[0], entities, tia_result, validated_tables, is_correct
+                    )
+                    # Re-run NLQ with validated tables
+                    tia_result["tables"] = validated_tables
+                    result = self.orchestrator.process_nlq(self.datasource, nlq, schemas=schemas, entities=entities)
+                except Exception as e:
+                    self.logger.error(f"Failed to process admin feedback for NLQ '{nlq}': {str(e)}")
+                    self.orchestrator.notify_admin(self.datasource, nlq, schemas, f"Admin feedback processing failed: {str(e)}", entities)
+                    raise CLIError(f"Failed to process admin feedback: {str(e)}")
             if result and result.get("sample_data"):
                 print(f"Results for schemas {', '.join(schemas)}:")
                 print(f"Tables: {', '.join(result['tables']) if result['tables'] else 'None'}")

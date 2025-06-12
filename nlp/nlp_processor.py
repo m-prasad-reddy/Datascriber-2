@@ -1,33 +1,28 @@
-import json
-import logging
-import openai
-import numpy
-from pathlib import Path
-from typing import Dict, List, Optional
-import re
 import spacy
+import logging
+import json
+import re
+from typing import Dict, List, Optional, Set
 from config.utils import ConfigUtils, ConfigError
-from config.logging_setup import LoggingSetup
-import traceback
-import httpx
+from datetime import datetime
+from pathlib import Path
 
 class NLPError(Exception):
     """Custom exception for NLP processing errors."""
     pass
 
 class NLPProcessor:
-    """NLP Processor for handling natural language queries in the Datascriber project.
+    """NLP processor for extracting tokens and entities from NLQs.
 
-    Processes NLQs to extract tokens, entities, and values using SpaCy and Azure Open AI embeddings.
-    Supports static and dynamic synonym handling with metadata integration.
+    Uses spaCy for tokenization and entity recognition, with synonym mapping and
+    regex-based entity extraction for table/column identification in the Datascriber project.
 
     Attributes:
         config_utils (ConfigUtils): Configuration utility instance.
         logger (logging.Logger): System-wide logger.
-        nlp (spacy.language.Language): SpaCy NLP model.
-        synonym_mode (str): 'static' or 'dynamic' synonym handling mode.
-        synonym_cache (Dict[str, Dict[str, List[str]]]): Cached synonym mappings by schema.
-        embedding_cache (Dict[str, Dict[str, List[float]]]): Cached embeddings by schema.
+        nlp (spacy.language.Language): spaCy NLP model.
+        date_patterns (List[re.Pattern]): Regex patterns for date extraction.
+        default_mappings (Dict): Default synonym mappings from config.
     """
 
     def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
@@ -43,57 +38,212 @@ class NLPProcessor:
         self.config_utils = config_utils
         self.logger = logger
         try:
-            self.nlp = None
-            self.synonym_mode = self._load_synonym_mode()
-            self.logger.debug("Loaded synonym mode")
-            self.synonym_cache = {}
-            self.embedding_cache = {}
-            self._init_nlp()
-            self.logger.debug("Initialized NLPProcessor")
-        except ConfigError as e:
-            self.logger.error(f"Failed to initialize NLPProcessor: {str(e)}\n{traceback.format_exc()}")
+            self.nlp = spacy.load("en_core_web_sm", disable=["parser"])
+            custom_stop_words = {"the", "a", "an"}  # Preserve 'all', 'list'
+            for word in custom_stop_words:
+                if word in self.nlp.Defaults.stop_words:
+                    self.nlp.Defaults.stop_words.remove(word)
+            self.date_patterns = [
+                re.compile(r"\b\d{4}\b"),  # YYYY
+                re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b"),  # MM/DD/YYYY
+                re.compile(r"\b\d{1,2}-\d{1,2}-\d{2,4}\b"),  # MM-DD-YYYY
+            ]
+            self.default_mappings = self._load_default_mappings()
+            self.logger.debug("Initialized NLPProcessor with spaCy model en_core_web_sm")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize NLPProcessor: {str(e)}")
             raise NLPError(f"Failed to initialize NLPProcessor: {str(e)}")
 
-    def _init_nlp(self) -> None:
-        """Initialize SpaCy NLP model.
-
-        Raises:
-            NLPError: If SpaCy model loading fails.
-        """
-        try:
-            self.nlp = spacy.load("en_core_web_sm")
-            self.logger.debug("Loaded SpaCy model: en_core_web_sm")
-        except ImportError as e:
-            self.logger.error(f"Failed to load SpaCy model: {str(e)}\n{traceback.format_exc()}")
-            raise NLPError(f"Failed to load SpaCy model: {str(e)}")
-
-    def _load_synonym_mode(self) -> str:
-        """Load synonym mode from configuration.
+    def _load_default_mappings(self) -> Dict:
+        """Load default synonym mappings from default_mappings.json.
 
         Returns:
-            str: 'static' or 'dynamic'.
+            Dict: Default mappings.
 
         Raises:
-            NLPError: If configuration loading fails.
+            NLPError: If loading fails critically.
         """
         try:
-            config = self.config_utils.load_synonym_config()
-            mode = config.get("synonym_mode", "static")
-            if mode not in ["static", "dynamic"]:
-                self.logger.warning(f"Invalid synonym mode {mode}, defaulting to static")
-                mode = "static"
-            self.logger.debug(f"Loaded synonym mode: {mode}")
-            return mode
-        except (ConfigError, json.JSONDecodeError):
-            self.logger.warning("Synonym config not found, defaulting to static mode")
-            return "static"
+            config_path = self.config_utils.config_dir / "default_mappings.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                self.logger.debug(f"Loaded default mappings from {config_path}")
+                return config.get("common_mappings", {})
+            self.logger.warning(f"default_mappings.json not found at {config_path}, using fallback. Create file with 'common_mappings' for scalability.")
+            default = {
+                "customers": ["customer", "clients", "users"],
+                "orders": ["order", "purchases"],
+                "products": ["product", "items"],
+                "stores": ["store", "shops"],
+                "staffs": ["staff", "employees"]
+            }
+            return default
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            self.logger.error(f"Failed to load default_mappings.json: {str(e)}, using fallback")
+            return {
+                "customers": ["customer", "clients", "users"],
+                "orders": ["order", "purchases"],
+                "products": ["product", "items"],
+                "stores": ["store", "shops"],
+                "staffs": ["staff", "employees"]
+            }
 
-    def _load_synonyms(self, schema: str, datasource: Dict) -> Dict[str, List[str]]:
-        """Load synonyms for a schema.
+    def process_query(self, query: str, schema: str, datasource: Optional[Dict] = None) -> Dict:
+        """Process an NLQ to extract tokens, entities, and values.
 
         Args:
+            query (str): Natural language query.
             schema (str): Schema name.
+            datasource (Optional[Dict]): Datasource configuration.
+
+        Returns:
+            Dict: Processed query with tokens, entities, and extracted values.
+
+        Raises:
+            NLPError: If processing fails.
+        """
+        try:
+            if not query or not isinstance(query, str):
+                self.logger.error("Invalid query provided")
+                raise NLPError("Invalid query provided")
+            if not schema or not isinstance(schema, str):
+                self.logger.error("Invalid schema provided")
+                raise NLPError("Invalid schema provided")
+            if datasource and not isinstance(datasource, dict):
+                self.logger.error("Invalid datasource provided")
+                raise NLPError("Invalid datasource provided")
+            nlp_query = query.strip()
+            tokens = self._tokenize(nlp_query)
+            entities = self._extract_entities(nlp_query)
+            # Fallback for weak tokenization
+            if not tokens or len(tokens) < 2:
+                self.logger.warning(f"Insufficient tokens extracted for query: {nlp_query}, using fallback")
+                tokens = [word for word in nlp_query.lower().split() if word]
+            # Ensure key terms from default mappings
+            for key in self.default_mappings:
+                if key in nlp_query.lower() and key not in tokens:
+                    tokens.append(key)
+            # Ensure entities for key terms
+            if not entities.get("objects"):
+                for key in self.default_mappings:
+                    if key in nlp_query.lower():
+                        entities["objects"].append(key)
+            synonyms = {}
+            if datasource:
+                try:
+                    synonyms = self._load_synonyms(datasource, schema)
+                    tokens = [self.map_synonyms(token, synonyms, schema, datasource) for token in tokens]
+                except NLPError as e:
+                    self.logger.warning(f"Failed to load synonyms for schema {schema}: {str(e)}")
+            result = {
+                "tokens": [token for token in tokens if token],
+                "entities": entities,
+                "extracted_values": self._extract_values(entities)
+            }
+            self.log_processing_metrics(nlp_query, result)
+            self.logger.debug(f"Processed query: {nlp_query}, tokens: {result['tokens']}, entities: {result['entities']}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Failed to process query '{nlp_query}' for schema {schema}: {str(e)}")
+            raise NLPError(f"Failed to process query: {str(e)}")
+
+    def _tokenize(self, query: str) -> List[str]:
+        """Tokenize the query using spaCy with fallback.
+
+        Args:
+            query (str): Query to tokenize.
+
+        Returns:
+            List[str]: List of tokens.
+        """
+        try:
+            doc = self.nlp(query.lower())
+            tokens = [
+                token.text for token in doc
+                if not token.is_stop and not token.is_punct and token.text.strip()
+            ]
+            if len(tokens) < 2:
+                self.logger.warning(f"Low token count for query '{query}', using fallback")
+                tokens = [word.strip() for word in query.lower().split() if word.strip()]
+            self.logger.debug(f"Tokenized query '{query}' to: {tokens}")
+            return tokens
+        except Exception as e:
+            self.logger.error(f"Failed to tokenize query '{query}': {str(e)}")
+            return [word.strip() for word in query.lower().split() if word.strip()]
+
+    def _extract_entities(self, query: str) -> Dict:
+        """Extract entities (dates, names, objects, places) from query.
+
+        Args:
+            query (str): Query to process.
+
+        Returns:
+            Dict: Dictionary of entities.
+        """
+        entities = {"common": [], "dates": [], "names": [], "objects": [], "places": []}
+        try:
+            doc = self.nlp(query)
+            for ent in doc.ents:
+                if ent.label_ == "DATE":
+                    entities["dates"].append(ent.text)
+                elif ent.label_ == "PERSON":
+                    entities["names"].append(ent.text)
+                elif ent.label_ == "GPE":
+                    entities["places"].append(ent.text)
+                elif ent.label_ in ["PRODUCT", "ORG"]:
+                    entities["objects"].append(ent.text)
+            # Rule-based extraction using default mappings
+            for key in self.default_mappings:
+                if key in query.lower():
+                    entities["objects"].append(key)
+            for pattern in self.date_patterns:
+                for match in pattern.finditer(query):
+                    entities["dates"].append(match.group(0))
+            # Remove duplicates
+            for key in entities:
+                entities[key] = list(dict.fromkeys(entities[key]))
+            if not any(entities.values()):
+                self.logger.warning(f"No entities extracted for query: {query}")
+            self.logger.debug(f"Extracted entities for query '{query}': {entities}")
+            return entities
+        except Exception as e:
+            self.logger.error(f"Failed to extract entities for query '{query}': {str(e)}")
+            return entities
+
+    def _extract_values(self, entities: Dict) -> Dict:
+        """Extract values from entities for query parameterization.
+
+        Args:
+            entities (Dict): Dictionary of entities.
+
+        Returns:
+            Dict: Extracted values.
+        """
+        extracted_values = {}
+        try:
+            for key, values in entities.items():
+                for value in values:
+                    if key == "dates":
+                        try:
+                            year = int(value)
+                            extracted_values[f"{key}_year"] = str(year)
+                        except ValueError:
+                            extracted_values[key] = value
+                    else:
+                        extracted_values[key] = value
+            self.logger.debug(f"Extracted values: {extracted_values}")
+            return extracted_values
+        except Exception as e:
+            self.logger.error(f"Failed to extract values from entities: {str(e)}")
+            return extracted_values
+
+    def _load_synonyms(self, datasource: Dict, schema: str) -> Dict[str, List[str]]:
+        """Load synonyms for schema and datasource.
+
+        Args:
             datasource (Dict): Datasource configuration.
+            schema (str): Schema name.
 
         Returns:
             Dict[str, List[str]]: Synonym mappings.
@@ -101,253 +251,248 @@ class NLPProcessor:
         Raises:
             NLPError: If synonym loading fails.
         """
-        cache_key = f"{datasource['name']}:{schema}"
-        if cache_key in self.synonym_cache:
-            return self.synonym_cache[cache_key]
-        synonym_file = f"{'synonyms' if self.synonym_mode == 'static' else 'dynamic_synonyms'}_{schema}.json"
-        synonym_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / synonym_file
         synonyms = {}
         try:
-            if synonym_path.exists():
-                with open(synonym_path, "r") as f:
-                    synonyms = json.load(f)
-                self.logger.debug(f"Loaded {self.synonym_mode} synonyms from {synonym_path}")
-            else:
-                self.logger.debug(f"No synonym file at {synonym_path}, using empty synonyms")
-            self.synonym_cache[cache_key] = synonyms
+            config_path = self.config_utils.config_dir / "synonym_config.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                synonyms.update(config.get("synonyms", {}))
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+            for table in metadata.get("tables", {}).values():
+                if not isinstance(table, dict) or "name" not in table:
+                    self.logger.warning(f"Invalid table entry in metadata: {table}")
+                    continue
+                table_name = table.get("name")
+                synonyms[table_name] = table.get("synonyms", []) + self.default_mappings.get(table_name.lower(), [])
+                for column in table.get("columns", []):
+                    if not isinstance(column, dict) or "name" not in column:
+                        self.logger.warning(f"Invalid column entry in table {table_name}: {column}")
+                        continue
+                    col_key = f"{table_name}.{column['name']}"
+                    synonyms[col_key] = column.get("synonyms", [])
+            self.logger.debug(f"Loaded synonyms for schema {schema}: {synonyms}")
             return synonyms
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to load synonyms from {synonym_path}: {str(e)}\n{traceback.format_exc()}")
+        except (json.JSONDecodeError, ConfigError) as e:
+            self.logger.error(f"Failed to load synonyms for schema {schema}: {str(e)}")
             raise NLPError(f"Failed to load synonyms: {str(e)}")
 
-    def _generate_dynamic_synonyms(self, term: str, schema: str, datasource: Dict) -> List[str]:
-        """Generate dynamic synonyms using Azure OpenAI embeddings.
+    def map_synonyms(self, token: str, synonyms: Dict[str, List[str]], schema: str, datasource: Dict) -> str:
+        """Map token to schema element using synonyms.
 
         Args:
-            term (str): Term to find synonyms for.
-            schema (str): Schema name.
-            datasource (Dict): Datasource configuration.
-
-        Returns:
-            List[str]: List of synonyms.
-
-        Raises:
-            NLPError: If synonym generation fails.
-        """
-        try:
-            llm_config = self.config_utils.load_llm_config()
-            azure_config = self.config_utils.load_azure_config()
-            model_config = self.config_utils.load_model_config()
-            required_keys = ["endpoint", "api_key", "embedding_deployment_name", "api_version"]
-            missing_keys = [k for k in required_keys if k not in azure_config]
-            if missing_keys:
-                self.logger.error(f"Missing Azure configuration keys: {missing_keys}")
-                raise NLPError(f"Missing Azure configuration keys: {missing_keys}")
-            custom_headers = azure_config.get("custom_auth_headers", {})
-            self.logger.debug(f"Using custom headers for Azure OpenAI client: {custom_headers}")
-            client = openai.AzureOpenAI(
-                azure_endpoint=azure_config["endpoint"],
-                api_key=azure_config["api_key"],
-                api_version=azure_config["api_version"],
-                http_client=httpx.Client(headers=custom_headers)
-            )
-            cache_key = f"{datasource['name']}:{schema}"
-            if cache_key not in self.embedding_cache:
-                metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
-                candidate_terms = set()
-                for table in metadata.get("tables", {}).values():
-                    candidate_terms.add(table["name"])
-                    candidate_terms.update(col["name"] for col in table.get("columns", []))
-                    candidate_terms.update(sum((col.get("synonyms", []) for col in table.get("columns", [])), []))
-                    candidate_terms.update(sum((col.get("unique_values", []) for col in table.get("columns", [])), []))
-                embeddings = {}
-                for candidate in candidate_terms:
-                    for attempt in range(3):
-                        try:
-                            self.logger.debug(
-                                f"Generating embedding for candidate '{candidate}' with deployment {azure_config['embedding_deployment_name']}"
-                            )
-                            embedding = client.embeddings.create(
-                                model=azure_config["embedding_deployment_name"],
-                                input=candidate
-                            ).data[0].embedding
-                            embeddings[candidate] = embedding
-                            break
-                        except Exception as e:
-                            if attempt == 2:
-                                self.logger.error(
-                                    f"Failed to embed {candidate} after 3 attempts: {str(e)}\n{traceback.format_exc()}"
-                                )
-                            continue
-                self.embedding_cache[cache_key] = embeddings
-            term_embedding = None
-            for attempt in range(3):
-                try:
-                    self.logger.debug(
-                        f"Generating embedding for term '{term}' with deployment {azure_config['embedding_deployment_name']}"
-                    )
-                    term_embedding = client.embeddings.create(
-                        model=azure_config["embedding_deployment_name"],
-                        input=term
-                    ).data[0].embedding
-                    break
-                except Exception as e:
-                    if attempt == 2:
-                        self.logger.error(
-                            f"Failed to embed term {term} after 3 attempts: {str(e)}\n"
-                            f"Stack trace: {traceback.format_exc()}\n"
-                            f"Deployment: {azure_config['embedding_deployment_name']}"
-                        )
-                        raise NLPError(f"Failed to generate embedding for {term}: {str(e)}")
-            synonyms = []
-            threshold = model_config.get("entities", 0.7)
-            for candidate, candidate_embedding in self.embedding_cache[cache_key].items():
-                similarity = numpy.dot(term_embedding, candidate_embedding) / (
-                    numpy.linalg.norm(term_embedding) * numpy.linalg.norm(candidate_embedding)
-                )
-                if similarity > threshold:
-                    synonyms.append(candidate)
-                    self.logger.debug(f"Generated synonym: {candidate} for {term} (similarity: {similarity})")
-            synonym_file = self.config_utils.get_datasource_data_dir(datasource["name"]) / f"dynamic_synonyms_{schema}.json"
-            synonyms_dict = self._load_synonyms(schema, datasource)
-            synonyms_dict[term] = synonyms
-            with open(synonym_file, "w") as f:
-                json.dump(synonyms_dict, f, indent=2)
-            self.synonym_cache[cache_key] = synonyms_dict
-            self.logger.info(f"Updated dynamic synonyms for {schema}")
-            return synonyms
-        except (KeyError, Exception) as e:
-            logging.error(f"Failed to generate dynamic synonyms for {term}: {str(e)}")
-            raise NLPError(f"Failed to generate dynamic synonyms: {str(e)}")
-
-    def process_query(self, nlq: str, schema: str, datasource: Dict = None, optional: Dict = None) -> Dict:
-        """Process an NLQ to retrieve tokens, entities, and values.
-
-        Args:
-            nlq (String): Natural language query.
-            schema (String): Schema name.
-            datasource (Dict): Optional datasource configuration.
-            optional (Dict, optional): Pre-extracted entities from cli/interface.py.
-
-        Returns:
-            Dict: Dictionary containing tokens, entities, and retrieved values.
-
-        Raises:
-            NLPError: If processing fails.
-        """
-        try:
-            clean_nlq = re.sub(r'^query\s+', '', nlq.strip(), flags=re.IGNORECASE).strip('"')
-            self.logger.debug(f"Processing cleaned NLQ: {clean_nlq}")
-            doc = self.nlp(clean_nlq)
-            tokens = [token.text.lower() for token in doc if not token.is_stop and not token.is_punct]
-            spacy_entities = {ent.label_.lower(): ent.text for ent in doc.ents}
-            combined_entities = {
-                "dates": [],
-                "names": [],
-                "objects": [],
-                "places": []
-            }
-            if entities:
-                for key in combined_entities:
-                    combined_entities[key] = optional.get(key, []) if isinstance(optional.get(key), list) else []
-            for label, value in spacy_entities.items():
-                if label == "date":
-                    combined_entities["dates"].append(value)
-                elif label == "person":
-                    combined_entities["names"].append(value)
-                elif label == "gpe":
-                    combined_entities["places"].append(value)
-                elif label == "product":
-                    combined_entities["objects"].append(value)
-            extracted_values = {}
-            if datasource:
-                metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
-                synonyms = self._load_synonyms(schema, datasource)
-                for token in tokens:
-                    mapped_term = self.map_synonyms(token, synonyms, schema, datasource)
-                    for table in metadata.get("tables", {}).values():
-                        for column in table.get("columns", []):
-                            col_name = column["name"].lower()
-                            col_type = column.get("type", "").lower()
-                            col_synonyms = column.get("synonyms", [])
-                            is_date_column = any(t in col_type for t in ["date", "datetime", "datetime2"])
-                            if mapped_term.lower() in [col_name] + [s.lower() for s in col_synonyms]:
-                                if combined_entities["dates"] and is_date_column:
-                                    extracted_values[col_name] = combined_entities["dates"][0]
-                                    self.logger.debug(f"Extracted date: {combined_entities['dates'][0]} for {col_name}")
-                                elif combined_entities["names"] and "varchar" in col_type:
-                                    extracted_values[col_name] = combined_entities["names"][0]
-                                    self.logger.debug(f"Extracted name: {combined_entities['names'][0]} for {col_name}")
-                                elif combined_entities["places"] and "varchar" in col_type:
-                                    extracted_values[col_name] = combined_entities["places"][0]
-                                    self.logger.debug(f"Extracted place: {combined_entities['places'][0]} for {col_name}")
-                                elif combined_entities["objects"] and "varchar" in col_type:
-                                    extracted_values[col_name] = combined_entities["objects"][0]
-                                    self.logger.debug(f"Extracted object: {combined_entities['objects'][0]} for {col_name}")
-                            if mapped_term.lower() in [col_name] + [s.lower() for s in col_synonyms]:
-                                for t in tokens[tokens.index(token)+1:]:
-                                    if "unique_values" in column and t in [v.lower() for v in column["unique_values"]]:
-                                        extracted_values[col_name] = t
-                                        self.logger.debug(f"Extracted value: {t} for {col_name}")
-            result = {
-                "tokens": tokens,
-                "entities": combined_entities,
-                "extracted_values": extracted_values
-            }
-            self.logger.info(f"Processed NLQ: {nlq}, result: {result}")
-            return result
-        except (ConfigError, KeyError) as e:
-            self.logger.error(f"Failed to process NLQ '{nlq}' for schema {schema}: {str(e)}\n{traceback.format_exc()}")
-            raise NLPError(f"Failed to process NLQ: {str(e)}")
-
-    def map_synonyms(self, term: str, synonyms: Dict[str, List[str]], schema: str, datasource: Dict) -> str:
-        """Map a term to its canonical form using synonyms.
-
-        Args:
-            term (str): Term to map.
+            token (str): Token to map.
             synonyms (Dict[str, List[str]]): Synonym mappings.
             schema (str): Schema name.
             datasource (Dict): Datasource configuration.
 
         Returns:
-            str: Canonical term or original term if no mapping found.
-
-        Raises:
-            NLPError: If mapping fails.
+            str: Mapped token or original token.
         """
         try:
-            term_lower = term.lower()
-            for canonical, synonym_list in synonyms.items():
-                if term_lower == canonical.lower() or term_lower in [s.lower() for s in synonym_list]:
-                    self.logger.debug(f"Mapped term '{term}' to canonical '{canonical}'")
-                    return canonical
-            if self.synonym_mode == "dynamic":
-                dynamic_synonyms = self._generate_dynamic_synonyms(term, schema, datasource)
-                for synonym in dynamic_synonyms:
-                    for canonical, synonym_list in synonyms.items():
-                        if synonym.lower() == canonical.lower() or synonym.lower() in [s.lower() for s in synonym_list]:
-                            synonyms[canonical].append(term)
-                            self.logger.debug(f"Added dynamic synonym '{term}' to '{canonical}'")
-                            return canonical
-            self.logger.debug(f"No synonym mapping for term: {term}")
-            return term
-        except NLPError as e:
-            self.logger.error(f"Failed to map synonyms for term '{term}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
-            raise
+            token_lower = token.lower()
+            for key, syn_list in synonyms.items():
+                key_lower = key.lower()
+                if token_lower == key_lower or token_lower in [s.lower() for s in syn_list]:
+                    # Validate schema
+                    if "." in key_lower:
+                        key_schema = key_lower.split(".")[0]
+                        if key_schema != schema.lower():
+                            continue
+                    self.logger.debug(f"Mapped token '{token}' to '{key}'")
+                    return key
+            # Check default mappings
+            for mapped_term, syn_list in self.default_mappings.items():
+                if token_lower == mapped_term or token_lower in [s.lower() for s in syn_list]:
+                    # Find matching table in schema
+                    metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+                    for table in metadata.get("tables", {}).values():
+                        if table.get("name").lower() == mapped_term:
+                            mapped_key = f"{schema}.{table['name']}"
+                            self.logger.debug(f"Mapped token '{token}' to '{mapped_key}' via default mappings")
+                            return mapped_key
+            self.logger.debug(f"No synonym mapping found for token '{token}'")
+            return token
+        except Exception as e:
+            self.logger.error(f"Failed to map synonyms for token '{token}': {str(e)}")
+            return token
 
-    def clear_cache(self, datasource_name: str = None, schema: str = None) -> None:
-        """Clear synonym and embedding caches.
+    def validate_entities(self, entities: Dict, schema: str, datasource: Dict) -> Dict:
+        """Validate entities against schema metadata.
 
         Args:
-            datasource_name (str, optional): Datasource name to clear.
-            schema (str, optional): Schema name to clear.
+            entities (Dict): Extracted entities.
+            schema (str): Schema name.
+            datasource (Dict): Datasource configuration.
+
+        Returns:
+            Dict: Validated entities.
         """
-        if datasource_name and schema:
-            cache_key = f"{datasource_name}:{schema}"
-            self.synonym_cache.pop(cache_key, None)
-            self.embedding_cache.pop(cache_key, None)
-            self.logger.debug(f"Cleared cache for {cache_key}")
-        else:
-            self.synonym_cache.clear()
-            self.embedding_cache.clear()
-            self.logger.debug("Cleared all caches")
+        validated_entities = {"common": [], "dates": [], "names": [], "objects": [], "places": []}
+        try:
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+            tables = [table["name"].lower() for table in metadata.get("tables", {}).values()]
+            for key, values in entities.items():
+                for value in values:
+                    if key == "objects" and value.lower() in tables:
+                        validated_entities[key].append(value)
+                    elif key in ["common", "dates", "names", "places"]:
+                        validated_entities[key].append(value)
+            # Validate against default mappings
+            for key in self.default_mappings:
+                if key in entities.get("objects", []) and key in tables:
+                    validated_entities["objects"].append(key)
+            self.logger.debug(f"Validated entities for schema {schema}: {validated_entities}")
+            return validated_entities
+        except ConfigError as e:
+            self.logger.error(f"Failed to validate entities for schema {schema}: {str(e)}")
+            return entities
+
+    def extract_regex_entities(self, query: str) -> Dict:
+        """Extract entities using regex patterns.
+
+        Args:
+            query (str): Query to process.
+
+        Returns:
+            Dict: Extracted entities.
+        """
+        entities = {"common": [], "dates": [], "names": [], "objects": [], "places": []}
+        try:
+            for pattern in self.date_patterns:
+                for match in pattern.finditer(query):
+                    entities["dates"].append(match.group(0))
+            name_pattern = re.compile(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b")
+            for match in name_pattern.finditer(query):
+                entities["names"].append(match.group(0))
+            # Rule-based object detection
+            for key in self.default_mappings:
+                if key in query.lower():
+                    entities["objects"].append(key)
+            self.logger.debug(f"Extracted regex entities for query '{query}': {entities}")
+            return entities
+        except Exception as e:
+            self.logger.error(f"Failed to extract regex entities for query '{query}': {str(e)}")
+            return entities
+
+    def merge_entities(self, spacy_entities: Dict, regex_entities: Dict) -> Dict:
+        """Merge spaCy and regex-based entities.
+
+        Args:
+            spacy_entities (Dict): Entities from spaCy.
+            regex_entities (Dict): Entities from regex.
+
+        Returns:
+            Dict: Merged entities.
+        """
+        merged = {"common": [], "dates": [], "names": [], "objects": [], "places": []}
+        try:
+            for key in merged:
+                merged[key] = list(set(spacy_entities.get(key, []) + regex_entities.get(key, [])))
+            self.logger.debug(f"Merged entities: {merged}")
+            return merged
+        except Exception as e:
+            self.logger.error(f"Failed to merge entities: {str(e)}")
+            return spacy_entities
+
+    def process_dynamic_synonyms(self, query: str, schema: str, datasource: Dict) -> Dict:
+        """Process dynamic synonyms based on query context.
+
+        Args:
+            query (str): Natural language query.
+            schema (str): Schema name.
+            datasource (Dict): Datasource configuration.
+
+        Returns:
+            Dict: Dynamic synonym mappings.
+        """
+        dynamic_synonyms = {}
+        try:
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+            tokens = self._tokenize(query)
+            for table in metadata.get("tables", {}).values():
+                if not isinstance(table, dict) or "name" not in table:
+                    continue
+                table_name = table.get("name").lower()
+                for token in tokens:
+                    if token.lower() in table_name or table_name in token.lower():
+                        dynamic_synonyms[token] = [table_name]
+            # Add default mappings
+            for key, syn_list in self.default_mappings.items():
+                if key in query.lower():
+                    dynamic_synonyms[key] = syn_list
+            self.logger.debug(f"Processed dynamic synonyms for query '{query}': {dynamic_synonyms}")
+            return dynamic_synonyms
+        except ConfigError as e:
+            self.logger.error(f"Failed to process dynamic synonyms for schema {schema}: {str(e)}")
+            return dynamic_synonyms
+
+    def validate_query_context(self, query: str, schema: str, datasource: Dict) -> bool:
+        """Validate query context against schema and datasource.
+
+        Args:
+            query (str): Natural language query.
+            schema (str): Schema name.
+            datasource (Dict): Datasource configuration.
+
+        Returns:
+            bool: True if context is valid, False otherwise.
+        """
+        try:
+            metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+            tokens = self._tokenize(query)
+            table_names = [table["name"].lower() for table in metadata.get("tables", {}).values()]
+            for token in tokens:
+                if token.lower() in table_names:
+                    return True
+            for key in self.default_mappings:
+                if key in query.lower() and key in table_names:
+                    return True
+            self.logger.warning(f"No valid context found for query '{query}' in schema {schema}")
+            return False
+        except ConfigError as e:
+            self.logger.error(f"Failed to validate query context for schema {schema}: {str(e)}")
+            return False
+
+    def enhance_query(self, query: str, schema: str, datasource: Dict) -> str:
+        """Enhance query with contextual information.
+
+        Args:
+            query (str): Natural language query.
+            schema (str): Schema name.
+            datasource (Dict): Datasource configuration.
+
+        Returns:
+            str: Enhanced query.
+        """
+        try:
+            enhanced_query = query
+            if self.validate_query_context(query, schema, datasource):
+                entities = self._extract_entities(query)
+                if entities.get("objects"):
+                    enhanced_query += f" (objects: {', '.join(entities['objects'])})"
+                if entities.get("dates"):
+                    enhanced_query += f" (dates: {', '.join(entities['dates'])})"
+            self.logger.debug(f"Enhanced query: {enhanced_query}")
+            return enhanced_query
+        except Exception as e:
+            self.logger.error(f"Failed to enhance query '{query}': {str(e)}")
+            return query
+
+    def log_processing_metrics(self, query: str, result: Dict) -> None:
+        """Log processing metrics for the query.
+
+        Args:
+            query (str): Natural language query.
+            result (Dict): Processing result with tokens and entities.
+        """
+        try:
+            metrics = {
+                "query_length": len(query),
+                "token_count": len(result.get("tokens", [])),
+                "entity_count": sum(len(values) for values in result.get("entities", {}).values()),
+                "timestamp": datetime.now().isoformat()
+            }
+            self.logger.info(f"Processing metrics for query '{query}': {metrics}")
+        except Exception as e:
+            self.logger.error(f"Failed to log processing metrics for query '{query}': {str(e)}")

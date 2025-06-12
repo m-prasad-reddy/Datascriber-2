@@ -21,18 +21,19 @@ class StorageManager:
 
     Handles metadata fetching and data reading for S3 buckets with multiple part files
     of a single file type per datasource. Supports csv, parquet, orc, txt, and
-    extension-less orc files with a configurable pattern.
+    extension-less orc files with a configurable pattern. For SQL Server datasources,
+    defers operations to DBManager.
 
     Attributes:
         config_utils (ConfigUtils): Configuration utility instance.
         logger (logging.Logger): System-wide logger.
-        s3_client (boto3.client): S3 client instance.
+        s3_client (boto3.client): S3 client instance (for S3 datasources).
         file_type (Optional[str]): Detected file type for the datasource.
-        datasource (Dict): S3 datasource configuration.
-        bucket_name (str): S3 bucket name.
-        database (str): Database prefix in S3.
-        region (str): AWS region.
-        orc_pattern (str): Pattern for ORC files.
+        datasource (Dict): Datasource configuration.
+        bucket_name (str): S3 bucket name (for S3 datasources).
+        database (str): Database prefix in S3 (for S3 datasources).
+        region (str): AWS region (for S3 datasources).
+        orc_pattern (str): Pattern for ORC files (for S3 datasources).
         table_cache (Dict[str, pd.DataFrame]): Cache for table data.
     """
 
@@ -63,36 +64,43 @@ class StorageManager:
             raise StorageError(f"Failed to initialize StorageManager: {str(e)}")
 
     def _set_datasource(self, datasource: Dict) -> None:
-        """Set and validate S3 datasource configuration.
+        """Set and validate datasource configuration.
 
-        Detects the file type and cleans invalid metadata files.
+        For S3 datasources, detects the file type and cleans invalid metadata files.
+        For SQL Server datasources, stores the configuration without S3 initialization.
 
         Args:
-            datasource (Dict): S3 datasource configuration.
+            datasource (Dict): Datasource configuration.
 
         Raises:
-            StorageError: If validation or file type detection fails.
+            StorageError: If validation fails for S3 datasources or required keys are missing.
         """
         required_keys = ["name", "type", "connection"]
         if not all(key in datasource for key in required_keys):
-            self.logger.error("Missing required keys in S3 datasource configuration")
+            self.logger.error("Missing required keys in datasource configuration")
             raise StorageError("Missing required keys")
-        if datasource["type"].lower() != "s3":
+        
+        datasource_type = datasource["type"].lower()
+        if datasource_type not in ["s3", "sqlserver"]:
             self.logger.error(f"Invalid datasource type: {datasource['type']}")
             raise StorageError(f"Invalid datasource type: {datasource['type']}")
-        conn_keys = ["bucket_name", "database", "region"]
-        if not all(key in datasource["connection"] for key in conn_keys):
-            self.logger.error("Missing required connection keys")
-            raise StorageError("Missing required connection keys")
+
         self.datasource = datasource
-        self.bucket_name = datasource["connection"]["bucket_name"]
-        self.database = datasource["connection"]["database"]
-        self.region = datasource["connection"]["region"]
-        self.orc_pattern = datasource["connection"].get("orc_pattern", r"^data_")
-        self._init_s3_client()
-        self._detect_datasource_file_type()
-        self._clean_invalid_metadata(datasource["name"])
-        self.logger.info(f"Set S3 datasource: {datasource['name']} with file type: {self.file_type}")
+        if datasource_type == "s3":
+            conn_keys = ["bucket_name", "database", "region"]
+            if not all(key in datasource["connection"] for key in conn_keys):
+                self.logger.error("Missing required connection keys for S3 datasource")
+                raise StorageError("Missing required connection keys")
+            self.bucket_name = datasource["connection"]["bucket_name"]
+            self.database = datasource["connection"]["database"]
+            self.region = datasource["connection"]["region"]
+            self.orc_pattern = datasource["connection"].get("orc_pattern", r"^data_")
+            self._init_s3_client()
+            self._detect_datasource_file_type()
+            self._clean_invalid_metadata(datasource["name"])
+            self.logger.info(f"Set S3 datasource: {datasource['name']} with file type: {self.file_type}")
+        else:
+            self.logger.debug(f"Set SQL Server datasource: {datasource['name']}, no S3 initialization required")
 
     def _clean_invalid_metadata(self, datasource_name: str) -> None:
         """Remove metadata files not matching configured schemas.
@@ -116,7 +124,7 @@ class StorageManager:
             self.logger.error(f"Failed to clean invalid metadata files for datasource {datasource_name}: {str(e)}")
 
     def _init_s3_client(self) -> None:
-        """Initialize S3 client.
+        """Initialize S3 client for S3 datasources.
 
         Raises:
             StorageError: If initialization fails.
@@ -148,7 +156,7 @@ class StorageManager:
             raise StorageError(f"Failed to initialize S3 client: {str(e)}")
 
     def _detect_datasource_file_type(self) -> None:
-        """Detect the file type used by the datasource.
+        """Detect the file type used by the S3 datasource.
 
         Scans the database folder for files and ensures a single type.
 
@@ -182,7 +190,7 @@ class StorageManager:
             raise StorageError(f"Failed to detect file type: {str(e)}")
 
     def _get_table_part_files(self, table: str, prefix: str) -> List[str]:
-        """Get list of part files for a table.
+        """Get list of part files for a table in S3.
 
         Args:
             table (str): Table name.
@@ -232,7 +240,9 @@ class StorageManager:
             StorageError: If storage fails.
         """
         try:
-            self._set_datasource(datasource)
+            # Set datasource only if it's S3; for sqlserver, DBManager handles it
+            if datasource["type"].lower() == "s3":
+                self._set_datasource(datasource)
             db_manager = DBManager(self.config_utils, self.logger)
             db_manager.store_rejected_query(datasource, query, schema, reason, user, error_type)
             self.logger.debug(f"Stored rejected query for schema {schema}, user {user}, error_type {error_type}: {reason}")
@@ -241,18 +251,23 @@ class StorageManager:
             raise StorageError(f"Failed to store rejected query: {str(e)}")
 
     def fetch_metadata(self, datasource: Dict, schema: str) -> bool:
-        """Fetch metadata from S3 bucket.
+        """Fetch metadata from S3 bucket for S3 datasources.
+
+        For SQL Server datasources, returns False as metadata is handled by DBManager.
 
         Args:
-            datasource (Dict): S3 datasource configuration.
+            datasource (Dict): Datasource configuration.
             schema (str): Schema name.
 
         Returns:
-            bool: True if metadata generated, False otherwise.
+            bool: True if metadata generated for S3, False for sqlserver or if failed.
 
         Raises:
-            StorageError: If metadata fetching fails.
+            StorageError: If metadata fetching fails for S3.
         """
+        if datasource["type"].lower() == "sqlserver":
+            self.logger.debug(f"Skipping S3 metadata fetch for SQL Server datasource {datasource['name']}, schema {schema}")
+            return False
         self._set_datasource(datasource)
         if not isinstance(schema, str) or not schema.strip():
             self.logger.warning(f"Invalid schema: {schema}, skipping metadata fetch")
@@ -354,19 +369,24 @@ class StorageManager:
             raise StorageError(f"Failed to fetch S3 metadata: {str(e)}")
 
     def read_table_data(self, datasource: Dict, schema: str, table: str) -> pd.DataFrame:
-        """Read table data from S3 into a pandas DataFrame.
+        """Read table data from S3 into a pandas DataFrame for S3 datasources.
+
+        For SQL Server datasources, raises an error as this is handled by DBManager.
 
         Args:
-            datasource (Dict): S3 datasource configuration.
+            datasource (Dict): Datasource configuration.
             schema (str): Schema name.
             table (str): Table name.
 
         Returns:
-            pd.DataFrame: Table data.
+            pd.DataFrame: Table data (for S3).
 
         Raises:
-            StorageError: If data reading fails.
+            StorageError: If data reading fails or called for sqlserver.
         """
+        if datasource["type"].lower() == "sqlserver":
+            self.logger.error(f"Table data reading not supported for SQL Server datasource {datasource['name']}")
+            raise StorageError("Table data reading not supported for SQL Server")
         self._set_datasource(datasource)
         if not isinstance(schema, str) or not schema.strip():
             self.logger.error(f"Invalid schema: {schema}")
@@ -419,7 +439,9 @@ class StorageManager:
             raise StorageError(f"Empty or invalid data: {str(e)}")
 
     def get_s3_path(self, schema: str, table: str) -> str:
-        """Get S3 path for a table.
+        """Get S3 path for a table in S3 datasources.
+
+        For SQL Server datasources, raises an error as this is not applicable.
 
         Args:
             schema (str): Schema name.
@@ -429,11 +451,17 @@ class StorageManager:
             str: S3 path (e.g., s3://bucket/database/table/).
 
         Raises:
-            StorageError: If path generation fails.
+            StorageError: If path generation fails or called for sqlserver.
         """
-        if not self.datasource or not self.bucket_name or not self.database:
+        if not self.datasource:
             self.logger.error("Datasource not set")
             raise StorageError("Datasource not set")
+        if self.datasource["type"].lower() == "sqlserver":
+            self.logger.error(f"S3 path generation not supported for SQL Server datasource {self.datasource['name']}")
+            raise StorageError("S3 path generation not supported for SQL Server")
+        if not self.bucket_name or not self.database:
+            self.logger.error("Bucket name or database not set")
+            raise StorageError("Bucket name or database not set")
         if not isinstance(schema, str) or not schema.strip():
             self.logger.error(f"Invalid schema: {schema}")
             raise StorageError(f"Invalid schema: {schema}")
@@ -445,18 +473,23 @@ class StorageManager:
         return s3_path
 
     def validate_metadata(self, datasource: Dict, schema: str) -> bool:
-        """Validate metadata existence and S3 file availability for a schema.
+        """Validate metadata existence and S3 file availability for a schema in S3 datasources.
+
+        For SQL Server datasources, returns False as validation is handled by DBManager.
 
         Args:
-            datasource (Dict): S3 datasource configuration.
+            datasource (Dict): Datasource configuration.
             schema (str): Schema name.
 
         Returns:
-            bool: True if valid, False otherwise.
+            bool: True if valid for S3, False for sqlserver or if invalid.
 
         Raises:
-            StorageError: If validation fails.
+            StorageError: If validation fails for S3.
         """
+        if datasource["type"].lower() == "sqlserver":
+            self.logger.debug(f"Skipping S3 metadata validation for SQL Server datasource {datasource['name']}, schema {schema}")
+            return False
         self._set_datasource(datasource)
         if not isinstance(schema, str) or not schema.strip():
             self.logger.warning(f"Invalid schema: {schema}, skipping validation")
@@ -478,18 +511,23 @@ class StorageManager:
             raise StorageError(f"Failed to validate metadata: {str(e)}")
 
     def get_metadata(self, datasource: Dict, schema: str) -> Dict:
-        """Load metadata for a schema.
+        """Load metadata for a schema in S3 datasources.
+
+        For SQL Server datasources, returns an empty dict as metadata is handled by DBManager.
 
         Args:
-            datasource (Dict): S3 datasource configuration.
+            datasource (Dict): Datasource configuration.
             schema (str): Schema name.
 
         Returns:
-            Dict: Metadata dictionary.
+            Dict: Metadata dictionary (for S3) or empty dict (for sqlserver).
 
         Raises:
-            StorageError: If loading fails.
+            StorageError: If loading fails for S3 or schema is invalid.
         """
+        if datasource["type"].lower() == "sqlserver":
+            self.logger.debug(f"Skipping S3 metadata load for SQL Server datasource {datasource['name']}, schema {schema}")
+            return {}
         self._set_datasource(datasource)
         if not isinstance(schema, str) or not schema.strip():
             self.logger.error(f"Invalid schema: {schema}")
