@@ -9,7 +9,6 @@ from openai import AzureOpenAI
 from nlp.nlp_processor import NLPProcessor
 from storage.db_manager import DBManager
 import httpx
-import os
 import traceback
 import re
 
@@ -33,6 +32,8 @@ class TableIdentifier:
         confidence_threshold (float): Prediction confidence threshold.
         model_path (Path): Path to model file.
         loaded_model (Optional[Dict]): Loaded model data.
+        default_mappings (Dict): Default synonym mappings from config.
+        generating_model (bool): Flag to prevent recursive model generation.
     """
 
     def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
@@ -47,6 +48,7 @@ class TableIdentifier:
         """
         self.config_utils = config_utils
         self.logger = logger
+        self.generating_model = False
         try:
             self.datasource = None
             self.synonym_mode = self._load_synonym_mode()
@@ -61,6 +63,7 @@ class TableIdentifier:
             self.confidence_threshold = model_config.get("confidence_threshold", 0.7)
             self.model_path = None
             self.loaded_model = None
+            self.default_mappings = self._load_default_mappings()
             self.logger.debug(
                 f"Initialized TableIdentifier with model_type={self.model_type}, "
                 f"model_name={self.model_name}, embedding_deployment_name={self.embedding_deployment_name}, "
@@ -70,8 +73,30 @@ class TableIdentifier:
             self.logger.error(f"Failed to initialize TableIdentifier: {str(e)}\n{traceback.format_exc()}")
             raise TIAError(f"Failed to initialize TableIdentifier: {str(e)}")
 
+    def _load_default_mappings(self) -> Dict:
+        """Load default synonym mappings from default_mappings.json.
+
+        Returns:
+            Dict: Default mappings.
+
+        Raises:
+            TIAError: If loading fails critically.
+        """
+        try:
+            config_path = self.config_utils.config_dir / "default_mappings.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                self.logger.debug(f"Loaded default mappings from {config_path}")
+                return config.get("common_mappings", {})
+            self.logger.warning(f"default_mappings.json not found at {config_path}, using empty fallback")
+            return {}
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse default_mappings.json: {str(e)}, using empty fallback")
+            return {}
+
     def _set_datasource(self, datasource: Dict) -> None:
-        """Set and validate datasheet configuration.
+        """Set and validate datasource configuration without triggering model generation.
 
         Args:
             datasource (Dict): Datasource configuration.
@@ -102,7 +127,7 @@ class TableIdentifier:
             if config_path.exists():
                 with open(config_path, "r") as f:
                     config = json.load(f)
-                mode = config.get("synonym_mode", "default")
+                mode = config.get("synonym_mode", "static")
                 if mode not in ["static", "language", "dynamic"]:
                     self.logger.warning(f"Invalid synonym mode {mode}, defaulting to static")
                     return "static"
@@ -145,6 +170,7 @@ class TableIdentifier:
         """
         if not self.model_path or not self.model_path.exists():
             self.logger.info(f"No model found at {self.model_path}")
+            self.loaded_model = None
             return
         try:
             with open(self.model_path, "r") as f:
@@ -156,6 +182,10 @@ class TableIdentifier:
                     self.loaded_model = None
                     return
             self.loaded_model["embeddings"] = np.array(self.loaded_model["embeddings"])
+            if self.loaded_model["embeddings"].size == 0:
+                self.logger.warning(f"Model at {self.model_path} has empty embeddings, setting loaded_model to None")
+                self.loaded_model = None
+                return
             self.logger.debug(f"Loaded model from {self.model_path}")
         except (json.JSONDecodeError, ValueError) as e:
             self.logger.error(f"Failed to load model {self.model_path}: {str(e)}\n{traceback.format_exc()}")
@@ -178,13 +208,17 @@ class TableIdentifier:
                 self.logger.error("Datasource not set")
                 raise TIAError("Datasource not set")
             metadata = self.config_utils.load_metadata(self.datasource["name"], schemas)
+            for schema in schemas:
+                if schema not in metadata:
+                    self.logger.warning(f"No metadata found for schema {schema}")
+                    metadata[schema] = {"tables": []}
             return metadata
         except ConfigError as e:
             self.logger.error(f"Failed to fetch metadata for schemas {schemas}: {str(e)}\n{traceback.format_exc()}")
             raise TIAError(f"Failed to fetch metadata: {str(e)}")
 
     def _load_synonyms(self, schema: str) -> Dict[str, List[str]]:
-        """Load synonyms from rich metadata.
+        """Load synonyms from metadata and default mappings.
 
         Args:
             schema (str): Schema name.
@@ -203,21 +237,20 @@ class TableIdentifier:
                     self.logger.warning(f"Invalid table entry in metadata: {table}")
                     continue
                 table_name = table.get("name")
-                if "synonyms" in table:
-                    synonyms[table_name] = table["synonyms"]
+                synonyms[table_name] = table.get("synonyms", []) + self.default_mappings.get(table_name.lower(), [])
                 for column in table.get("columns", []):
                     if not isinstance(column, dict) or "name" not in column:
                         self.logger.warning(f"Invalid column entry in table {table_name}: {column}")
                         continue
-                    if "synonyms" in column:
-                        synonyms[f"{table_name}.{column['name']}"] = column["synonyms"]
-            self.logger.debug(f"Loaded synonyms for schema {schema}")
+                    col_key = f"{table_name}.{column['name']}"
+                    synonyms[col_key] = column.get("synonyms", [])
+            self.logger.debug(f"Loaded synonyms for schema {schema}: {synonyms}")
             return synonyms
         except TIAError as e:
             self.logger.error(f"Failed to load synonyms for schema {schema}: {str(e)}\n{traceback.format_exc()}")
             raise
 
-    def identify_tables(self, datasource: Dict, nlq: str, schemas: List[str]) -> Optional[Dict]:
+    def identify_tables(self, datasource: Dict, nlq: str, schemas: List[str]) -> Dict:
         """Identify tables and columns for an NLQ.
 
         Args:
@@ -226,27 +259,34 @@ class TableIdentifier:
             schemas (List[str]): Schema names.
 
         Returns:
-            Optional[Dict]: Identification result or None if failed.
+            Dict: Identification result.
 
         Raises:
             TIAError: If identification fails critically.
         """
-        self._set_datasource(datasource)
         self.logger.debug(f"Identifying tables for NLQ '{nlq}' with schemas {schemas}")
         try:
             if not schemas:
                 self.logger.error(f"No schemas provided for NLQ: {nlq}")
                 raise TIAError("No schemas provided")
+            self._set_datasource(datasource)
+            # Generate model if it doesn't exist
+            if not self.model_path.exists():
+                self.logger.info(f"No model found at {self.model_path}, generating default")
+                self.generate_model(datasource)
             nlp_processor = NLPProcessor(self.config_utils, self.logger)
             result = None
             if self.loaded_model:
                 result = self._predict_with_model(nlq, schemas[0], nlp_processor)
             if not result:
                 result = self._predict_with_mappings(nlq, schemas, nlp_processor)
-            if result:
-                self.logger.info(f"Identification successful for NLQ: {nlq}")
+            if not result or not result.get("tables"):
+                self.logger.warning(f"No tables identified for NLQ: {nlq}, using fallback")
+                result = self._fallback_prediction(nlq, schemas, nlp_processor)
+            if result and result.get("tables"):
+                self.logger.info(f"Identification successful for NLQ: {nlq}, tables: {result['tables']}")
                 return result
-            self.logger.warning(f"No tables identified for NLQ: {nlq}")
+            self.logger.error(f"Failed to identify tables for NLQ: {nlq}")
             try:
                 db_manager = DBManager(self.config_utils, self.logger)
                 db_manager.store_rejected_query(
@@ -254,7 +294,16 @@ class TableIdentifier:
                 )
             except Exception as store_e:
                 self.logger.error(f"Failed to store rejected query for NLQ {nlq}: {str(store_e)}\n{traceback.format_exc()}")
-            return None
+            return {
+                "tables": [],
+                "columns": [],
+                "extracted_values": {},
+                "placeholders": [],
+                "entities": {},
+                "ddl": "",
+                "conditions": {},
+                "sql": None
+            }
         except Exception as e:
             self.logger.error(f"Identification failed for NLQ '{nlq}': {str(e)}\n{traceback.format_exc()}")
             raise TIAError(f"Identification failed: {str(e)}")
@@ -272,6 +321,10 @@ class TableIdentifier:
         """
         try:
             nlq_embedding = self._encode_query(nlq)
+            if self.loaded_model["embeddings"].size == 0:
+                self.logger.warning(f"Empty embeddings in model for datasource {self.datasource['name']}, falling back to metadata-based prediction")
+                return None
+            self.logger.debug(f"NLQ embedding shape: {nlq_embedding.shape}, model embeddings shape: {self.loaded_model['embeddings'].shape}")
             similarities = np.dot(nlq_embedding, self.loaded_model["embeddings"].T) / (
                 np.linalg.norm(nlq_embedding) * np.linalg.norm(self.loaded_model["embeddings"], axis=1)
             )
@@ -282,13 +335,22 @@ class TableIdentifier:
                 tables = self.loaded_model["tables"][max_sim_idx]
                 columns = self.loaded_model["columns"][max_sim_idx]
                 nlp_result = nlp_processor.process_query(nlq, schema, datasource=self.datasource)
+                # Validate tables against metadata
+                metadata = self._get_metadata([schema])
+                valid_tables = [
+                    t for t in tables
+                    if any(td.get("name") == t.split(".")[-1] for td in metadata.get(schema, {}).get("tables", []))
+                ]
+                if not valid_tables:
+                    self.logger.warning(f"No valid tables found in model prediction for NLQ: {nlq}")
+                    return None
                 return {
-                    "tables": tables,
+                    "tables": valid_tables,
                     "columns": columns,
                     "extracted_values": nlp_result.get("extracted_values", {}),
                     "placeholders": ["?" for _ in nlp_result.get("extracted_values", {})],
                     "entities": nlp_result.get("entities", {}),
-                    "ddl": self._generate_ddl(tables, schema),
+                    "ddl": self._generate_ddl([t.split(".")[-1] for t in valid_tables], schema),
                     "conditions": self._extract_conditions(nlp_result),
                     "sql": self._get_stored_sql(query)
                 }
@@ -330,11 +392,13 @@ class TableIdentifier:
             }
             # Calculate table scores
             table_scores = {}
+            token_mappings = []
             for token in tokens:
                 mapped_term = nlp_processor.map_synonyms(token, synonyms, schemas[0], self.datasource)
-                self.logger.debug(f"Processing token: {token}, mapped to: {mapped_term}")
+                token_mappings.append(f"Token: {token} -> Mapped: {mapped_term}")
                 for schema in schemas:
                     schema_data = metadata.get(schema, {})
+                    schema_boost = 0.2 if token.lower() in schema.lower() else 0.0
                     for table in schema_data.get("tables", []):
                         if not isinstance(table, dict) or "name" not in table:
                             self.logger.warning(f"Invalid table entry in metadata: {table}")
@@ -343,13 +407,16 @@ class TableIdentifier:
                         full_table = f"{schema}.{table_name}"
                         table_synonyms = synonyms.get(table_name, [])
                         score = 0.0
-                        # Exact match
                         if mapped_term.lower() == table_name.lower():
-                            score += 1.0
-                        # Partial match or synonym
+                            score += 1.2  # Prioritize exact matches
                         elif (mapped_term.lower() in table_name.lower() or
-                              any(mapped_term.lower() in s.lower() for s in sorted(table_synonyms))):
-                            score += 0.7
+                              any(mapped_term.lower() in s.lower() for s in table_synonyms)):
+                            score += 0.8
+                        for key, syn_list in self.default_mappings.items():
+                            if mapped_term.lower() == key or mapped_term.lower() in [s.lower() for s in syn_list]:
+                                if table_name.lower() == key:
+                                    score += 0.9
+                        score += schema_boost
                         # Embedding similarity
                         if score < 1.0:
                             try:
@@ -358,7 +425,7 @@ class TableIdentifier:
                                 sim = np.dot(token_embedding, table_embedding) / (
                                     np.linalg.norm(token_embedding) * np.linalg.norm(table_embedding)
                                 )
-                                score += max(0.0, min(0.3, float(sim)))
+                                score += max(0.0, min(0.4, float(sim)))
                             except TIAError as e:
                                 self.logger.warning(f"Embedding failed for token {mapped_term}: {str(e)}")
                         if score > 0:
@@ -373,8 +440,8 @@ class TableIdentifier:
                             if mapped_term.lower() == col_name.lower():
                                 col_score += 1.0
                             elif (mapped_term.lower() in col_name.lower() or
-                                  any(mapped_term.lower() in s.lower() for s in sorted(col_synonyms))):
-                                col_score += 0.7
+                                  any(mapped_term.lower() in s.lower() for s in col_synonyms)):
+                                col_score += 0.8
                             if col_score > 0:
                                 full_col = f"{schema}.{table_name}.{col_name}"
                                 if full_col not in result["columns"]:
@@ -386,10 +453,18 @@ class TableIdentifier:
                                         result["extracted_values"][f"{table_name}.{col_name}"] = value
                                         if "?" not in result["placeholders"]:
                                             result["placeholders"].append("?")
+            self.logger.debug(f"Token mappings for NLQ '{nlq}': {'; '.join(token_mappings)}")
             # Select top tables
-            for full_table, score in sorted(table_scores.items(), key=lambda x: x[1], reverse=True)[:3]:
-                if score >= 0.5:
-                    result["tables"].append(full_table)
+            selected_tables = []
+            for full_table, score in sorted(table_scores.items(), key=lambda x: x[1], reverse=True)[:2]:
+                if score >= 0.7:
+                    schema, table_name = full_table.split(".")
+                    if any(t.get("name") == table_name for t in metadata.get(schema, {}).get("tables", [])):
+                        selected_tables.append(full_table)
+            result["tables"] = selected_tables
+            if not result["tables"]:
+                self.logger.debug(f"No tables scored >= 0.7 for NLQ: {nlq}")
+                return None
             # Handle references
             for schema in schemas:
                 schema_data = metadata.get(schema, {})
@@ -398,6 +473,7 @@ class TableIdentifier:
                         self.logger.warning(f"Invalid table entry in metadata: {table}")
                         continue
                     table_name = table.get("name")
+                    full_table = f"{schema}.{table_name}"
                     for column in table.get("columns", []):
                         if not isinstance(column, dict) or "name" not in column:
                             self.logger.warning(f"Invalid column entry in table {table_name}: {column}")
@@ -407,9 +483,9 @@ class TableIdentifier:
                             ref_schema = schema if "." not in ref_table else ref_table.split(".")[0]
                             ref_table_name = ref_table.split(".")[1] if "." in ref_table else ref_table
                             full_ref_table = f"{ref_schema}.{ref_table_name}"
-                            full_table = f"{schema}.{table_name}"
-                            if full_ref_table in result["tables"] and full_table not in result["tables"]:
-                                result["tables"].append(full_table)
+                            if full_ref_table in selected_tables and full_table not in selected_tables:
+                                selected_tables.append(full_table)
+            result["tables"] = selected_tables
             if not result["tables"]:
                 self.logger.debug(f"No tables identified for NLQ: {nlq} in schemas {schemas}")
                 return None
@@ -419,6 +495,62 @@ class TableIdentifier:
         except TIAError as e:
             self.logger.error(f"Metadata identification error for NLQ '{nlq}': {str(e)}\n{traceback.format_exc()}")
             return None
+
+    def _fallback_prediction(self, nlq: str, schemas: List[str], nlp_processor: NLPProcessor) -> Dict:
+        """Fallback prediction for common NLQs.
+
+        Args:
+            nlq (str): Natural language query.
+            schemas (List[str]): Schema names.
+            nlp_processor (NLPProcessor): NLP processor instance.
+
+        Returns:
+            Dict: Fallback identification result.
+        """
+        try:
+            nlp_result = nlp_processor.process_query(nlq, schemas[0], datasource=self.datasource)
+            tokens = nlp_result.get("tokens", [])
+            entities = nlp_result.get("entities", {})
+            extracted_values = nlp_result.get("extracted_values", {})
+            metadata = self._get_metadata(schemas)
+            result = {
+                "tables": [],
+                "columns": [],
+                "extracted_values": extracted_values,
+                "placeholders": ["?" for _ in extracted_values],
+                "entities": entities,
+                "ddl": "",
+                "conditions": self._extract_conditions(nlp_result),
+                "sql": None
+            }
+            for token in tokens:
+                for key, syn_list in self.default_mappings.items():
+                    if token.lower() == key or token.lower() in [s.lower() for s in syn_list]:
+                        for schema in schemas:
+                            schema_data = metadata.get(schema, {})
+                            for table in schema_data.get("tables", []):
+                                if not isinstance(table, dict) or "name" not in table:
+                                    continue
+                                if table.get("name").lower() == key:
+                                    full_table = f"{schema}.{table['name']}"
+                                    if full_table not in result["tables"]:
+                                        result["tables"].append(full_table)
+            if result["tables"]:
+                result["ddl"] = self._generate_ddl([t.split(".")[-1] for t in result["tables"]], schemas[0])
+                self.logger.debug(f"Fallback prediction for NLQ '{nlq}': {result['tables']}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Fallback prediction failed for NLQ '{nlq}': {str(e)}\n{traceback.format_exc()}")
+            return {
+                "tables": [],
+                "columns": [],
+                "extracted_values": {},
+                "placeholders": [],
+                "entities": {},
+                "ddl": "",
+                "conditions": {},
+                "sql": None
+            }
 
     def _encode_query(self, text: str | List[str]) -> np.ndarray:
         """Encode text using Azure Open AI embeddings.
@@ -495,12 +627,12 @@ class TableIdentifier:
                 if not table_data:
                     self.logger.warning(f"No metadata found for table {table} in schema {schema}")
                     continue
-                columns = [f"{col['name']} {col['type']}" for col in table_data.get("columns", [])]
+                columns = [f"{col['name']} {col['type']}" for col in sorted(table_data.get("columns", []), key=lambda x: x['name'])]
                 if columns:
                     ddl_parts.append(f"CREATE TABLE {schema}.{table} ({', '.join(columns)});")
             return "\n".join(ddl_parts)
-        except TIAError:
-            self.logger.warning(f"Failed to generate DDL for tables {tables}")
+        except TIAError as e:
+            self.logger.error(f"Failed to generate DDL for tables {tables}: {str(e)}")
             return ""
 
     def _extract_conditions(self, nlp_result: Dict) -> Dict:
@@ -513,18 +645,22 @@ class TableIdentifier:
             Dict: Conditions dictionary.
         """
         conditions = []
-        for key, value in nlp_result.get("extracted_values", {}).items():
-            if isinstance(value, str) and "date" in key.lower():
-                try:
-                    year = int(value)
-                    conditions.append(f"EXTRACT(YEAR FROM {key}) = {year}")
-                except ValueError:
+        try:
+            for key, value in nlp_result.get("extracted_values", {}).items():
+                if isinstance(value, str) and "date" in key.lower():
+                    try:
+                        year = int(value)
+                        conditions.append(f"EXTRACT(YEAR FROM {key}) = {year}")
+                    except ValueError:
+                        conditions.append(f"{key} = '{value}'")
+                elif isinstance(value, list):
+                    conditions.append(f"{key} IN {tuple(value)}")
+                else:
                     conditions.append(f"{key} = '{value}'")
-            elif isinstance(value, list):
-                conditions.append(f"{key} IN {tuple(value)}")
-            else:
-                conditions.append(f"{key} = '{value}'")
-        return {"conditions": conditions}
+            return {"conditions": conditions}
+        except Exception as e:
+            self.logger.error(f"Failed to extract conditions: {str(e)}\n{traceback.format_exc()}")
+            return {"conditions": []}
 
     def _get_stored_sql(self, query: str) -> Optional[str]:
         """Retrieve stored SQL from training data.
@@ -657,6 +793,9 @@ class TableIdentifier:
             TIAError: If training fails.
         """
         self._set_datasource(datasource)
+        if not self.model_path.exists():
+            self.logger.info(f"No model found at {self.model_path}, generating default")
+            self.generate_model(datasource)
         try:
             queries = [data["user_query"] for data in training_data]
             tables = [json.loads(data["related_tables"]) for data in training_data]
@@ -694,8 +833,23 @@ class TableIdentifier:
         Raises:
             TIAError: If model generation fails.
         """
-        self._set_datasource(datasource)
+        if self.generating_model:
+            self.logger.warning(f"Model generation already in progress for {datasource['name']}, skipping")
+            return
+        self.generating_model = True
         try:
+            required_keys = ["name", "type", "connection"]
+            if not all(key in datasource for key in required_keys):
+                self.logger.error("Missing required keys in datasource configuration")
+                raise TIAError("Missing required keys")
+            self.datasource = datasource
+            self.model_path = self.config_utils.models_dir / f"model_{datasource['name']}.json"
+            if self.model_path.exists():
+                self.logger.debug(f"Model already exists at {self.model_path}, skipping generation")
+                self._load_model()
+                return
+            self.logger.info(f"Generating default model for {datasource['name']}")
+            # Initialize empty model to support incremental training via train_manual or train_bulk
             model_data = {
                 "queries": [],
                 "tables": [],
@@ -705,10 +859,21 @@ class TableIdentifier:
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.model_path, "w") as f:
                 json.dump(model_data, f, indent=2)
-            self.logger.info(f"Generated default model for {self.model_path}")
-            db_manager = DBManager(self.config_utils, self.logger)
-            db_manager.store_model_metrics(self.datasource, metrics)
+            self.logger.info(f"Generated default model at {self.model_path}")
+            try:
+                db_manager = DBManager(self.config_utils, self.logger)
+                metrics = {
+                    "model_version": datetime.now().strftime("%Y%m%d%H%M%S"),
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "nlq_breakdown": {}
+                }
+                db_manager.store_model_metrics(self.datasource, metrics)
+            except Exception as db_e:
+                self.logger.error(f"Failed to store model metrics: {str(db_e)}\n{traceback.format_exc()}")
             self._load_model()
         except Exception as e:
             self.logger.error(f"Failed to generate default model: {str(e)}\n{traceback.format_exc()}")
             raise TIAError(f"Failed to generate default model: {str(e)}")
+        finally:
+            self.generating_model = False

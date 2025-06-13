@@ -2,10 +2,11 @@ import spacy
 import logging
 import json
 import re
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from config.utils import ConfigUtils, ConfigError
 from datetime import datetime
 from pathlib import Path
+from storage.db_manager import DBManager
 
 class NLPError(Exception):
     """Custom exception for NLP processing errors."""
@@ -70,7 +71,7 @@ class NLPProcessor:
                     config = json.load(f)
                 self.logger.debug(f"Loaded default mappings from {config_path}")
                 return config.get("common_mappings", {})
-            self.logger.warning(f"default_mappings.json not found at {config_path}, using fallback. Create file with 'common_mappings' for scalability.")
+            self.logger.warning(f"default_mappings.json not found at {config_path}, using fallback")
             default = {
                 "customers": ["customer", "clients", "users"],
                 "orders": ["order", "purchases"],
@@ -129,13 +130,13 @@ class NLPProcessor:
                 for key in self.default_mappings:
                     if key in nlp_query.lower():
                         entities["objects"].append(key)
-            synonyms = {}
+            synonyms = self.default_mappings.copy()
             if datasource:
                 try:
-                    synonyms = self._load_synonyms(datasource, schema)
+                    synonyms.update(self._load_synonyms(datasource, schema))
                     tokens = [self.map_synonyms(token, synonyms, schema, datasource) for token in tokens]
                 except NLPError as e:
-                    self.logger.warning(f"Failed to load synonyms for schema {schema}: {str(e)}")
+                    self.logger.warning(f"Failed to load synonyms for schema {schema}: {str(e)}, using default mappings")
             result = {
                 "tokens": [token for token in tokens if token],
                 "entities": entities,
@@ -146,6 +147,14 @@ class NLPProcessor:
             return result
         except Exception as e:
             self.logger.error(f"Failed to process query '{nlp_query}' for schema {schema}: {str(e)}")
+            try:
+                if datasource:
+                    db_manager = DBManager(self.config_utils, self.logger)
+                    db_manager.store_rejected_query(
+                        datasource, nlp_query, schema, f"NLP processing failed: {str(e)}", "system", "NLP_ERROR"
+                    )
+            except Exception as store_e:
+                self.logger.error(f"Failed to store rejected query '{nlp_query}': {str(store_e)}")
             raise NLPError(f"Failed to process query: {str(e)}")
 
     def _tokenize(self, query: str) -> List[str]:
@@ -249,7 +258,7 @@ class NLPProcessor:
             Dict[str, List[str]]: Synonym mappings.
 
         Raises:
-            NLPError: If synonym loading fails.
+            NLPError: If synonym loading fails critically.
         """
         synonyms = {}
         try:
@@ -259,23 +268,52 @@ class NLPProcessor:
                     config = json.load(f)
                 synonyms.update(config.get("synonyms", {}))
             metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
-            for table in metadata.get("tables", {}).values():
+            tables = metadata.get("tables", [])
+            if not isinstance(tables, list):
+                self.logger.warning(f"Invalid metadata: 'tables' is {type(tables)}, expected list")
+                return self.default_mappings
+            self.logger.debug(f"Metadata tables for schema {schema}: {tables}")
+            for table in tables:
                 if not isinstance(table, dict) or "name" not in table:
                     self.logger.warning(f"Invalid table entry in metadata: {table}")
                     continue
                 table_name = table.get("name")
+                if not isinstance(table_name, str):
+                    self.logger.warning(f"Invalid table name in metadata: {table_name}")
+                    continue
                 synonyms[table_name] = table.get("synonyms", []) + self.default_mappings.get(table_name.lower(), [])
-                for column in table.get("columns", []):
+                columns = table.get("columns", [])
+                if not isinstance(columns, list):
+                    self.logger.warning(f"Invalid columns for table {table_name}: {columns}")
+                    continue
+                for column in columns:
                     if not isinstance(column, dict) or "name" not in column:
                         self.logger.warning(f"Invalid column entry in table {table_name}: {column}")
                         continue
                     col_key = f"{table_name}.{column['name']}"
                     synonyms[col_key] = column.get("synonyms", [])
+            if not synonyms:
+                self.logger.warning(f"No synonyms loaded for schema {schema}, using default mappings")
+                try:
+                    db_manager = DBManager(self.config_utils, self.logger)
+                    db_manager.store_rejected_query(
+                        datasource, "Synonym loading", schema, "No valid synonyms in metadata", "system", "NLP_ERROR"
+                    )
+                except Exception as store_e:
+                    self.logger.error(f"Failed to store rejected query for synonym loading: {str(store_e)}")
+                return self.default_mappings
             self.logger.debug(f"Loaded synonyms for schema {schema}: {synonyms}")
             return synonyms
         except (json.JSONDecodeError, ConfigError) as e:
             self.logger.error(f"Failed to load synonyms for schema {schema}: {str(e)}")
-            raise NLPError(f"Failed to load synonyms: {str(e)}")
+            try:
+                db_manager = DBManager(self.config_utils, self.logger)
+                db_manager.store_rejected_query(
+                    datasource, "Synonym loading", schema, f"Synonym loading failed: {str(e)}", "system", "NLP_ERROR"
+                )
+            except Exception as store_e:
+                self.logger.error(f"Failed to store rejected query for synonym loading: {str(store_e)}")
+            return self.default_mappings
 
     def map_synonyms(self, token: str, synonyms: Dict[str, List[str]], schema: str, datasource: Dict) -> str:
         """Map token to schema element using synonyms.
@@ -306,7 +344,9 @@ class NLPProcessor:
                 if token_lower == mapped_term or token_lower in [s.lower() for s in syn_list]:
                     # Find matching table in schema
                     metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
-                    for table in metadata.get("tables", {}).values():
+                    for table in metadata.get("tables", []):
+                        if not isinstance(table, dict) or "name" not in table:
+                            continue
                         if table.get("name").lower() == mapped_term:
                             mapped_key = f"{schema}.{table['name']}"
                             self.logger.debug(f"Mapped token '{token}' to '{mapped_key}' via default mappings")
@@ -331,7 +371,7 @@ class NLPProcessor:
         validated_entities = {"common": [], "dates": [], "names": [], "objects": [], "places": []}
         try:
             metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
-            tables = [table["name"].lower() for table in metadata.get("tables", {}).values()]
+            tables = [table["name"].lower() for table in metadata.get("tables", []) if isinstance(table, dict) and "name" in table]
             for key, values in entities.items():
                 for value in values:
                     if key == "objects" and value.lower() in tables:
@@ -409,9 +449,14 @@ class NLPProcessor:
         dynamic_synonyms = {}
         try:
             metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+            tables = metadata.get("tables", [])
+            if not isinstance(tables, list):
+                self.logger.warning(f"Invalid metadata: 'tables' is {type(tables)}, expected list")
+                return dynamic_synonyms
             tokens = self._tokenize(query)
-            for table in metadata.get("tables", {}).values():
+            for table in tables:
                 if not isinstance(table, dict) or "name" not in table:
+                    self.logger.warning(f"Invalid table entry in metadata: {table}")
                     continue
                 table_name = table.get("name").lower()
                 for token in tokens:
@@ -440,13 +485,13 @@ class NLPProcessor:
         """
         try:
             metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+            tables = [table["name"].lower() for table in metadata.get("tables", []) if isinstance(table, dict) and "name" in table]
             tokens = self._tokenize(query)
-            table_names = [table["name"].lower() for table in metadata.get("tables", {}).values()]
             for token in tokens:
-                if token.lower() in table_names:
+                if token.lower() in tables:
                     return True
             for key in self.default_mappings:
-                if key in query.lower() and key in table_names:
+                if key in query.lower() and key in tables:
                     return True
             self.logger.warning(f"No valid context found for query '{query}' in schema {schema}")
             return False

@@ -1,6 +1,7 @@
 import json
 from typing import Dict, List, Optional
 import logging
+from pathlib import Path
 from config.utils import ConfigUtils, ConfigError
 from storage.storage_manager import StorageManager
 from nlp.nlp_processor import NLPProcessor
@@ -22,6 +23,7 @@ class PromptGenerator:
         llm_config (Dict): LLM configuration from llm_config.json.
         storage_manager (StorageManager): Storage manager instance.
         nlp_processor (NLPProcessor): NLP processor instance.
+        default_mappings (Dict): Default synonym mappings from config.
     """
 
     def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
@@ -40,6 +42,7 @@ class PromptGenerator:
             self.llm_config = self._load_llm_config()
             self.storage_manager = StorageManager(self.config_utils, self.logger)
             self.nlp_processor = NLPProcessor(self.config_utils, self.logger)
+            self.default_mappings = self._load_default_mappings()
             self.logger.debug("Initialized PromptGenerator")
         except ConfigError as e:
             self.logger.error(f"Failed to initialize PromptGenerator: {str(e)}")
@@ -64,6 +67,28 @@ class PromptGenerator:
             self.logger.error(f"Failed to load llm_config.json: {str(e)}")
             raise PromptError(f"Failed to load llm_config.json: {str(e)}")
 
+    def _load_default_mappings(self) -> Dict:
+        """Load default synonym mappings from default_mappings.json.
+
+        Returns:
+            Dict: Default mappings.
+
+        Raises:
+            PromptError: If loading fails critically.
+        """
+        try:
+            config_path = self.config_utils.config_dir / "default_mappings.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                self.logger.debug(f"Loaded default mappings from {config_path}")
+                return config.get("common_mappings", {})
+            self.logger.warning(f"default_mappings.json not found at {config_path}, using empty fallback")
+            return {}
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse default_mappings.json: {str(e)}, using empty fallback")
+            return {}
+
     def generate_system_prompt(self, datasource: Dict, schemas: List[str]) -> str:
         """Generate system prompt for LLM across multiple schemas.
 
@@ -85,7 +110,7 @@ class PromptGenerator:
             base_prompt = self.llm_config["prompt_settings"]["system_prompt"]
             file_type = datasource["type"]
             if file_type == "s3":
-                file_type = self.storage_manager.file_type or "unknown"
+                file_type = self.storage_manager.file_type or "parquet"
             prompt = (
                 f"{base_prompt}\n"
                 f"Datasource: {datasource['name']} ({file_type})\n"
@@ -93,6 +118,9 @@ class PromptGenerator:
             for schema in schemas:
                 try:
                     metadata = self._get_metadata(datasource, schema)
+                    if not metadata.get("tables"):
+                        self.logger.warning(f"No tables found for schema {schema}")
+                        continue
                     prompt += (
                         f"Schema: {schema}\n"
                         f"Metadata: {json.dumps(metadata, indent=2)}\n"
@@ -120,7 +148,7 @@ class PromptGenerator:
                     datasource, "", schemas[0], f"System prompt generation failed: {str(e)}", "system", "PROMPT_ERROR"
                 )
             except Exception as store_e:
-                self.logger.error(f"Failed to store rejected query: {str(store_e)}")
+                self.logger.error(f"Failed to store rejected query: {str(e)}")
             raise PromptError(f"Failed to generate system prompt: {str(e)}")
 
     def _get_metadata(self, datasource: Dict, schema: str) -> Dict:
@@ -138,6 +166,9 @@ class PromptGenerator:
         """
         try:
             metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+            if not metadata:
+                self.logger.error(f"No metadata found for schema {schema} in datasource {datasource['name']}")
+                raise PromptError(f"No metadata for schema {schema}")
             self.logger.debug(f"Fetched metadata for schema {schema} in datasource {datasource['name']}")
             return metadata
         except ConfigError as e:
@@ -167,11 +198,12 @@ class PromptGenerator:
         try:
             self.storage_manager._set_datasource(datasource)
             entities = entities or self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource).get("entities", {})
-            prediction = prediction or {}
-            # Prioritize sales.customers for customer-related NLQs
-            if "customer" in nlq.lower():
-                prediction["tables"] = ["sales.customers"] if "sales" in schemas else []
-                prediction["columns"] = ["customer_id", "first_name", "last_name"]
+            prediction = prediction or {"tables": [], "columns": [], "entities": entities}
+            # Validate prediction
+            if not prediction.get("tables"):
+                self.logger.warning(f"No tables in prediction for NLQ: {nlq}, using fallback")
+                prediction["tables"] = self._get_related_tables(nlq, schemas[0], datasource, self._get_metadata(datasource, schemas[0]))
+                prediction["columns"] = self._get_specific_columns(nlq, schemas[0], datasource, self._get_metadata(datasource, schemas[0]))
             prompt = (
                 f"User Query: {nlq}\n"
                 f"Schemas: {', '.join(schemas)}\n"
@@ -217,6 +249,7 @@ class PromptGenerator:
                     f"Schemas: {', '.join(schemas)}\n"
                     f"Datasource: {datasource['name']}\n"
                     f"Entities: {json.dumps(entities, indent=2)}\n"
+                    f"Prediction: {json.dumps(prediction, indent=2)}\n"
                     f"Generate a valid SQL query."
                 )
             self.logger.debug(f"Generated user prompt for NLQ: {nlq}, length: {len(prompt)}")
@@ -244,18 +277,30 @@ class PromptGenerator:
         Returns:
             str: Context string.
         """
-        context = []
-        for key, values in entities.items():
-            if values:
-                context.append(f"{key.capitalize()} detected: {', '.join(values)}")
-        if prediction.get("tables"):
-            context.append(f"Predicted tables: {', '.join(prediction['tables'])}")
-        context.append(f"Use schema {schema} from datasource {datasource['name']}")
-        tables = metadata.get("tables", {})
-        if tables:
-            table_names = [table["name"] for table in tables.values()]
-            context.append(f"Available tables: {', '.join(table_names)}")
-        return "; ".join(context)
+        try:
+            context = []
+            for key, values in entities.items():
+                if values:
+                    context.append(f"{key.capitalize()} detected: {', '.join(values)}")
+            if prediction.get("tables"):
+                context.append(f"Predicted tables: {', '.join(prediction['tables'])}")
+            context.append(f"Use schema {schema} from datasource {datasource['name']}")
+            tables = metadata.get("tables", [])
+            self.logger.debug(f"Metadata tables for schema {schema}: {tables}")
+            if tables:
+                if not isinstance(tables, list):
+                    self.logger.warning(f"Invalid metadata: 'tables' is {type(tables)}, expected list")
+                    return ""
+                table_names = [table["name"] for table in tables if isinstance(table, dict) and "name" in table]
+                if not table_names:
+                    self.logger.warning(f"No valid table names found in metadata for schema {schema}")
+                else:
+                    context.append(f"Available tables: {', '.join(table_names)}")
+            return "; ".join(context)
+        except Exception as e:
+            self.logger.error(f"Failed to build context for schema {schema}: {str(e)}")
+            self.storage_manager.store_rejected_query(datasource, "", schema, f"Context build failed: {str(e)}", "system", "CONTEXT_ERROR")
+            return ""
 
     def generate_training_data(self, datasource: Dict, nlq: str, schema: str, entities: Dict, sql: str, prediction: Optional[Dict] = None, scenario_id: Optional[str] = None) -> Dict:
         """Generate a single training data row for storage in SQLite.
@@ -319,12 +364,19 @@ class PromptGenerator:
             nlp_result = self.nlp_processor.process_query(nlq.lower(), schema, datasource=datasource)
             tokens = nlp_result.get("tokens", [])
             tables = []
-            tables_data = metadata.get("tables", {})
-            table_names = [table["name"] for table in tables_data.values()]
-            for table_name in table_names:
-                if any(token in table_name.lower() for token in tokens) or (schema == "sales" and "customer" in nlq.lower() and table_name == "customers"):
-                    tables.append(f"{schema}.{table_name}")
-            return tables or [f"{schema}.{table_names[0]}"] if table_names else []
+            tables_data = metadata.get("tables", [])
+            if not isinstance(tables_data, list):
+                self.logger.warning(f"Invalid metadata: 'tables' is {type(tables_data)}, expected list")
+                return []
+            table_names = [table["name"] for table in tables_data if isinstance(table, dict) and "name" in table]
+            for token in tokens:
+                for key, syn_list in self.default_mappings.items():
+                    if token.lower() == key or token.lower() in [s.lower() for s in syn_list]:
+                        if key in table_names:
+                            tables.append(f"{schema}.{key}")
+            if not tables and table_names:
+                tables.append(f"{schema}.{table_names[0]}")
+            return tables
         except Exception as e:
             self.logger.error(f"Failed to identify related tables for NLQ {nlq}, schema {schema}: {str(e)}")
             return []
@@ -345,17 +397,21 @@ class PromptGenerator:
             nlp_result = self.nlp_processor.process_query(nlq.lower(), schema, datasource=datasource)
             tokens = nlp_result.get("tokens", [])
             columns = []
-            tables_data = metadata.get("tables", {})
-            for table in tables_data.values():
+            tables_data = metadata.get("tables", [])
+            if not isinstance(tables_data, list):
+                self.logger.warning(f"Invalid metadata: 'tables' is {type(tables_data)}, expected list")
+                return []
+            for table in tables_data:
+                if not isinstance(table, dict) or "columns" not in table:
+                    continue
                 for col in table.get("columns", []):
                     col_name = col["name"].lower()
                     if any(token in col_name for token in tokens):
                         columns.append(col["name"])
             if not columns and tables_data:
-                first_table = next(iter(tables_data.values()))
-                columns = [col["name"] for col in first_table.get("columns", [])[:2]]
-            if "customer" in nlq.lower() and schema == "sales":
-                columns = ["customer_id", "first_name", "last_name"]
+                first_table = next((t for t in tables_data if isinstance(t, dict) and "columns" in t), None)
+                if first_table:
+                    columns = [col["name"] for col in first_table.get("columns", [])[:2]]
             return columns
         except Exception as e:
             self.logger.error(f"Failed to identify specific columns for NLQ {nlq}, schema {schema}: {str(e)}")
@@ -422,18 +478,58 @@ class PromptGenerator:
             raise PromptError("No schemas provided")
         try:
             if not self.llm_config.get("mock_enabled", False):
-                self.logger.warning("Mock LLM call attempted but mock_enabled is False, falling back to simple query")
-                query = "SELECT * FROM sales.customers" if "sales" in schemas else "# No valid schema"
+                self.logger.warning("Mock LLM call attempted but mock_enabled is False, falling back to default query")
+                query = "# No valid schema"
                 if user_role == "admin":
                     print(f"Generated SQL: {query}")
                 return query
+            # Extract entities from prompt
+            entities = {}
+            prompt_lines = prompt.split("\n")
+            entities_start = None
+            for i, line in enumerate(prompt_lines):
+                if line.startswith("Entities:"):
+                    entities_start = i
+                    break
+            if entities_start is not None:
+                entities_lines = []
+                i = entities_start + 1
+                while i < len(prompt_lines) and not prompt_lines[i].startswith(("Schema:", "Prediction:")):
+                    entities_lines.append(prompt_lines[i])
+                    i += 1
+                if entities_lines:
+                    try:
+                        entities_json = "\n".join(entities_lines).strip()
+                        entities = json.loads(entities_json)
+                    except json.JSONDecodeError as e:
+                        self.logger.warning(f"Failed to parse entities JSON: {str(e)}, JSON: {entities_json}")
+                        entities = {}
+            # Extract prediction from prompt
+            prediction = {}
+            prediction_start = None
+            for i, line in enumerate(prompt_lines):
+                if line.startswith("Prediction:"):
+                    prediction_start = i
+                    break
+            if prediction_start is not None:
+                prediction_lines = []
+                i = prediction_start + 1
+                while i < len(prompt_lines) and not prompt_lines[i].startswith(("Schema:",)):
+                    prediction_lines.append(prompt_lines[i])
+                    i += 1
+                if prediction_lines:
+                    try:
+                        prediction_json = "\n".join(prediction_lines).strip()
+                        prediction = json.loads(prediction_json)
+                    except json.JSONDecodeError as e:
+                        self.logger.warning(f"Failed to parse prediction JSON: {str(e)}, JSON: {prediction_json}")
+                        prediction = {"tables": [], "columns": []}
             for schema in schemas:
                 try:
                     metadata = self._get_metadata(datasource, schema)
                     is_s3 = datasource["type"] == "s3"
-                    tables_data = metadata.get("tables", {})
-                    table_names = [table["name"] for table in tables_data.values()]
-                    if not table_names:
+                    tables_data = metadata.get("tables", [])
+                    if not tables_data:
                         self.logger.warning(f"No tables found for schema {schema}")
                         try:
                             self.storage_manager.store_rejected_query(
@@ -442,51 +538,57 @@ class PromptGenerator:
                         except Exception as store_e:
                             self.logger.error(f"Failed to store rejected query for schema {schema}: {str(store_e)}")
                         continue
-                    table = "customers" if "customers" in table_names and schema == "sales" else table_names[0]
-                    columns = [col["name"] for col in tables_data[table].get("columns", [])[:2]]
-                    conditions = []
-                    # Extract entities from prompt
-                    entities = {}
-                    prompt_lines = prompt.split("\n")
-                    entities_start = None
-                    for i, line in enumerate(prompt_lines):
-                        if line.startswith("Entities:"):
-                            entities_start = i
+                    if not isinstance(tables_data, list):
+                        self.logger.warning(f"Invalid metadata: 'tables' is {type(tables_data)}, expected list")
+                        continue
+                    table_names = [table["name"] for table in tables_data if isinstance(table, dict) and "name" in table]
+                    # Use prediction tables if available
+                    table = None
+                    if prediction.get("tables"):
+                        for t in prediction["tables"]:
+                            t_name = t.split(".")[-1]
+                            if t_name in table_names:
+                                table = t_name
+                                break
+                    if not table:
+                        # Fallback to default_mappings
+                        nlp_result = self.nlp_processor.process_query(prompt, schema, datasource=datasource)
+                        tokens = nlp_result.get("tokens", [])
+                        for token in tokens:
+                            for key, syn_list in self.default_mappings.items():
+                                if token.lower() == key or token.lower() in [s.lower() for s in syn_list]:
+                                    if key in table_names:
+                                        table = key
+                                        break
+                            if table:
+                                break
+                    if not table and table_names:
+                        table = table_names[0]
+                    if not table:
+                        self.logger.warning(f"No valid table selected for schema {schema}")
+                        continue
+                    columns = []
+                    for t in tables_data:
+                        if t.get("name") == table:
+                            columns = [col["name"] for col in t.get("columns", [])[:2]]
                             break
-                    if entities_start is not None:
-                        entities_lines = []
-                        i = entities_start + 1
-                        while i < len(prompt_lines) and not prompt_lines[i].startswith(("Schema:", "Prediction:")):
-                            entities_lines.append(prompt_lines[i])
-                            i += 1
-                        if entities_lines:
-                            try:
-                                entities_json = "\n".join(entities_lines).strip()
-                                entities = json.loads(entities_json)
-                            except json.JSONDecodeError as e:
-                                self.logger.error(f"Failed to parse entities JSON: {str(e)}, JSON: {entities_json}")
-                                try:
-                                    self.storage_manager.store_rejected_query(
-                                        datasource, prompt, schema, f"Invalid entities JSON: {str(e)}", "system", "JSON_ERROR"
-                                    )
-                                except Exception as store_e:
-                                    self.logger.error(f"Failed to store rejected query for schema {schema}: {str(store_e)}")
-                                continue
+                    conditions = []
                     for key, values in entities.items():
                         for val in values:
                             col = next(
-                                (c["name"] for c in tables_data[table].get("columns", []) if "date" in c["type"].lower()),
-                                columns[0] if columns else ""
+                                (c["name"] for c in t.get("columns", []) if "date" in c["type"].lower()),
+                                columns[0] if columns else None
                             )
-                            if key == "dates" and col:
-                                if is_s3:
-                                    conditions.append(f"EXTRACT(YEAR FROM {col}) = '{val}'")
+                            if col:
+                                if key == "dates":
+                                    if is_s3:
+                                        conditions.append(f"EXTRACT(YEAR FROM {col}) = '{val}'")
+                                    else:
+                                        conditions.append(f"YEAR({col}) = '{val}'")
                                 else:
-                                    conditions.append(f"YEAR({col}) = '{val}'")
-                            elif col:
-                                conditions.append(f"LOWER({col}) LIKE '%{val.lower()}%'")
+                                    conditions.append(f"LOWER({col}) LIKE '%{val.lower()}%'")
                     if table_names and columns:
-                        query = f"SELECT * FROM {schema}.{table}"
+                        query = f"SELECT {', '.join(columns)} FROM {schema}.{table}"
                         if conditions:
                             query += f" WHERE {' AND '.join(conditions)}"
                         self.logger.info(f"Mock SQL query for schema {schema}: {query}")
@@ -503,7 +605,7 @@ class PromptGenerator:
                         self.logger.error(f"Failed to store rejected query for schema {schema}: {str(store_e)}")
                     continue
             self.logger.warning("Insufficient data for mock LLM response across all schemas")
-            query = "SELECT * FROM sales.customers" if "sales" in schemas else "# Mock SQL query: insufficient data"
+            query = "# Mock SQL query: insufficient data"
             if user_role == "admin":
                 print(f"Generated SQL: {query}")
             return query
