@@ -1,6 +1,8 @@
 {
-  "model_name": "gpt-4o",
   "embedding_model": "text-embedding-3-small",
+  "embedding_deployment_name": "embedding-model",
+  "model_name": "gpt-4o",
+  "llm_deployment_name": "gpt-4o",
   "api_version": "2024-12-01-preview",
   "prompt_settings": {
     "system_prompt": "You are a SQL expert generating valid SQL queries for SQL Server and S3 datasources. Use strftime for dates, LOWER() and LIKE for strings, SUM() and AVG() for numerics. Ensure queries are optimized and safe.",
@@ -34,5 +36,5 @@
       "scenario_id"
     ]
   },
-  "mock_enabled": true
+  "mock_enabled": false
 }

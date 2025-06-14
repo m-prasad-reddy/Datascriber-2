@@ -3,8 +3,9 @@ import os
 from pathlib import Path
 import configparser
 from typing import Dict, List, Optional
-import logging
 import re
+from config.logging_setup import LoggingSetup
+import traceback
 
 class ConfigError(Exception):
     """Custom exception for configuration errors."""
@@ -23,6 +24,7 @@ class ConfigUtils:
         models_dir (Path): Models directory.
         logs_dir (Path): Logs directory.
         temp_dir (Path): Temporary files directory.
+        enable_component_logging (bool): Flag for component output logging.
     """
 
     def __init__(self):
@@ -34,6 +36,8 @@ class ConfigUtils:
         Raises:
             ConfigError: If directory creation fails.
         """
+        self.logger = LoggingSetup.get_logger(__name__)
+        self.enable_component_logging = LoggingSetup.LOGGING_CONFIG.get("enable_component_logging", False)
         try:
             self.base_dir = Path(os.getenv("DATASCRIBER_BASE_DIR", Path(__file__).resolve().parent.parent))
             self.config_dir = Path(os.getenv("DATASCRIBER_CONFIG_DIR", self.base_dir / "app-config"))
@@ -42,7 +46,11 @@ class ConfigUtils:
             self.logs_dir = Path(os.getenv("DATASCRIBER_LOGS_DIR", self.base_dir / "logs"))
             self.temp_dir = Path(os.getenv("DATASCRIBER_TEMP_DIR", self.base_dir / "temp"))
             self._ensure_directories()
+            self.logger.debug("Initialized ConfigUtils")
+            if self.enable_component_logging:
+                print("Component Output: Initialized ConfigUtils")
         except Exception as e:
+            self.logger.error(f"Failed to initialize ConfigUtils: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to initialize ConfigUtils: {str(e)}")
 
     def _ensure_directories(self) -> None:
@@ -54,7 +62,11 @@ class ConfigUtils:
         try:
             for directory in [self.config_dir, self.data_dir, self.models_dir, self.logs_dir, self.temp_dir]:
                 directory.mkdir(parents=True, exist_ok=True)
+            self.logger.debug(f"Ensured directories exist: {', '.join(str(d) for d in [self.config_dir, self.data_dir, self.models_dir, self.logs_dir, self.temp_dir])}")
+            if self.enable_component_logging:
+                print("Component Output: Ensured project directories exist")
         except OSError as e:
+            self.logger.error(f"Failed to create directories: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to create directories: {str(e)}")
 
     def load_db_configurations(self) -> Dict:
@@ -72,34 +84,40 @@ class ConfigUtils:
         config_path = self.config_dir / "db_configurations.json"
         try:
             if not config_path.exists():
+                self.logger.error(f"Database configuration file not found: {config_path}")
                 raise ConfigError(f"Database configuration file not found: {config_path}")
             with open(config_path, "r") as f:
                 config = json.load(f)
             if not isinstance(config.get("datasources", []), list):
+                self.logger.error("Invalid db_configurations.json: 'datasources' must be a list")
                 raise ConfigError("Invalid db_configurations.json: 'datasources' must be a list")
             for ds in config["datasources"]:
                 if not isinstance(ds, dict) or not all(key in ds for key in ["name", "type", "connection"]):
+                    self.logger.error("Invalid datasource format: missing 'name', 'type', or 'connection'")
                     raise ConfigError("Invalid datasource format: missing 'name', 'type', or 'connection'")
                 # Validate and normalize schemas
                 raw_schemas = ds["connection"].get("schemas", ["dbo" if ds["type"].lower() == "sqlserver" else "default"])
                 if not isinstance(raw_schemas, list):
+                    self.logger.error(f"Datasource {ds['name']}: 'schemas' must be a list, got {type(raw_schemas)}")
                     raise ConfigError(f"Datasource {ds['name']}: 'schemas' must be a list, got {type(raw_schemas)}")
                 schemas = []
                 for schema in raw_schemas:
                     if not isinstance(schema, str) or not schema.strip():
-                        logging.warning(f"Datasource {ds['name']}: Skipping invalid schema {schema}")
+                        self.logger.warning(f"Datasource {ds['name']}: Skipping invalid schema {schema}")
                         continue
                     schema = schema.strip().lower()
                     if ds["type"].lower() == "s3" and not re.match(r'^[a-z0-9_-]+$', schema):
-                        logging.warning(f"Datasource {ds['name']}: Invalid S3 schema {schema}, must be alphanumeric with underscores or hyphens")
+                        self.logger.warning(f"Datasource {ds['name']}: Invalid S3 schema {schema}, must be alphanumeric with underscores or hyphens")
                         continue
                     schemas.append(schema)
                 if not schemas:
+                    self.logger.error(f"Datasource {ds['name']}: No valid schemas provided")
                     raise ConfigError(f"Datasource {ds['name']}: No valid schemas provided")
                 ds["connection"]["schemas"] = schemas
-                logging.debug(f"Datasource {ds['name']}: Loaded schemas {schemas}")
+                self.logger.debug(f"Datasource {ds['name']}: Loaded schemas {schemas}")
                 ds["connection"]["tables"] = ds["connection"].get("tables", [])
                 if not ds["connection"]["schemas"] and not ds["connection"]["tables"]:
+                    self.logger.error(f"Datasource {ds['name']} must have at least one schema or table configured")
                     raise ConfigError(f"Datasource {ds['name']} must have at least one schema or table configured")
                 if ds["type"].lower() == "s3":
                     if "bucket" in ds["connection"] and "bucket_name" not in ds["connection"]:
@@ -109,16 +127,23 @@ class ConfigUtils:
                     required = ["bucket_name", "database", "region"]
                     for key in required:
                         if key not in ds["connection"]:
+                            self.logger.error(f"Missing {key} in s3 connection for datasource: {ds['name']}")
                             raise ConfigError(f"Missing {key} in s3 connection for datasource: {ds['name']}")
                 if ds["type"].lower() == "sqlserver":
                     required = ["host", "database", "username", "password"]
                     for key in required:
                         if key not in ds["connection"]:
+                            self.logger.error(f"Missing {key} in sqlserver connection for datasource: {ds['name']}")
                             raise ConfigError(f"Missing {key} in sqlserver connection for datasource: {ds['name']}")
+            self.logger.debug(f"Loaded database configurations from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded database configurations from {config_path}")
             return config
         except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse db_configurations.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to parse db_configurations.json: {str(e)}")
         except Exception as e:
+            self.logger.error(f"Failed to load db_configurations.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to load db_configurations.json: {str(e)}")
 
     def load_aws_config(self) -> Dict:
@@ -133,19 +158,26 @@ class ConfigUtils:
         config_path = self.config_dir / "aws_config.json"
         try:
             if not config_path.exists():
-                logging.debug(f"AWS configuration file not found: {config_path}, returning empty config")
+                self.logger.debug(f"AWS configuration file not found: {config_path}, returning empty config")
+                if self.enable_component_logging:
+                    print(f"Component Output: AWS configuration file not found, using empty config")
                 return {}
             with open(config_path, "r") as f:
                 config = json.load(f)
             required = ["aws_access_key_id", "aws_secret_access_key", "region"]
             for key in required:
                 if key not in config:
+                    self.logger.error(f"Missing {key} in aws_config.json")
                     raise ConfigError(f"Missing {key} in aws_config.json")
-            logging.debug(f"Loaded AWS configuration from {config_path}")
+            self.logger.debug(f"Loaded AWS configuration from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded AWS configuration from {config_path}")
             return config
         except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse aws_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to parse aws_config.json: {str(e)}")
         except Exception as e:
+            self.logger.error(f"Failed to load aws_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to load aws_config.json: {str(e)}")
 
     def load_azure_config(self) -> Dict:
@@ -160,18 +192,24 @@ class ConfigUtils:
         config_path = self.config_dir / "azure_config.json"
         try:
             if not config_path.exists():
+                self.logger.error(f"Azure configuration file not found: {config_path}")
                 raise ConfigError(f"Azure configuration file not found: {config_path}")
             with open(config_path, "r") as f:
                 config = json.load(f)
-            required = ["endpoint", "api_key"]
+            required = ["azure_endpoint", "api_key"]
             for key in required:
                 if key not in config:
+                    self.logger.error(f"Missing {key} in azure_config.json")
                     raise ConfigError(f"Missing {key} in azure_config.json")
-            logging.debug(f"Loaded Azure configuration from {config_path}")
+            self.logger.debug(f"Loaded Azure configuration from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded Azure configuration from {config_path}")
             return config
         except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse azure_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to parse azure_config.json: {str(e)}")
         except Exception as e:
+            self.logger.error(f"Failed to load azure_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to load azure_config.json: {str(e)}")
 
     def load_synonym_config(self) -> Dict:
@@ -186,15 +224,21 @@ class ConfigUtils:
         config_path = self.config_dir / "synonym_config.json"
         try:
             if not config_path.exists():
-                logging.debug(f"Synonym configuration file not found: {config_path}, defaulting to static mode")
+                self.logger.debug(f"Synonym configuration file not found: {config_path}, defaulting to static mode")
+                if self.enable_component_logging:
+                    print(f"Component Output: Synonym configuration file not found, defaulting to static mode")
                 return {"synonym_mode": "static"}
             with open(config_path, "r") as f:
                 config = json.load(f)
-            logging.debug(f"Loaded synonym configuration from {config_path}")
+            self.logger.debug(f"Loaded synonym configuration from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded synonym configuration from {config_path}")
             return config
         except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse synonym_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to parse synonym_config.json: {str(e)}")
         except Exception as e:
+            self.logger.error(f"Failed to load synonym_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to load synonym_config.json: {str(e)}")
 
     def load_model_config(self) -> Dict:
@@ -209,7 +253,9 @@ class ConfigUtils:
         config_path = self.config_dir / "model_config.json"
         try:
             if not config_path.exists():
-                logging.debug(f"Model configuration file not found: {config_path}, defaulting to Azure Open AI")
+                self.logger.debug(f"Model configuration file not found: {config_path}, defaulting to Azure Open AI")
+                if self.enable_component_logging:
+                    print(f"Component Output: Model configuration file not found, defaulting to Azure Open AI")
                 return {
                     "model_type": "azure-openai",
                     "model_name": "text-embedding-3-small",
@@ -217,11 +263,15 @@ class ConfigUtils:
                 }
             with open(config_path, "r") as f:
                 config = json.load(f)
-            logging.debug(f"Loaded model configuration from {config_path}")
+            self.logger.debug(f"Loaded model configuration from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded model configuration from {config_path}")
             return config
         except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse model_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to parse model_config.json: {str(e)}")
         except Exception as e:
+            self.logger.error(f"Failed to load model_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to load model_config.json: {str(e)}")
 
     def load_llm_config(self) -> Dict:
@@ -236,7 +286,9 @@ class ConfigUtils:
         config_path = self.config_dir / "llm_config.json"
         try:
             if not config_path.exists():
-                logging.debug(f"LLM configuration file not found: {config_path}, returning default config")
+                self.logger.debug(f"LLM configuration file not found: {config_path}, returning default config")
+                if self.enable_component_logging:
+                    print(f"Component Output: LLM configuration file not found, using default config")
                 return {
                     "mock_enabled": False,
                     "prompt_settings": {
@@ -259,11 +311,15 @@ class ConfigUtils:
                         "error_message": "Invalid date format"
                     }
                 }
-            logging.debug(f"Loaded LLM configuration from {config_path}")
+            self.logger.debug(f"Loaded LLM configuration from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded LLM configuration from {config_path}")
             return config
         except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse llm_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to parse llm_config.json: {str(e)}")
         except Exception as e:
+            self.logger.error(f"Failed to load llm_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to load llm_config.json: {str(e)}")
 
     def load_logging_config(self) -> configparser.ConfigParser:
@@ -278,14 +334,19 @@ class ConfigUtils:
         config_path = self.config_dir / "logging_config.ini"
         try:
             if not config_path.exists():
+                self.logger.error(f"Logging configuration file not found: {config_path}")
                 raise ConfigError(f"Logging configuration file not found: {config_path}")
             config = configparser.ConfigParser()
             config.read(config_path)
-            logging.debug(f"Loaded logging configuration from {config_path}")
+            self.logger.debug(f"Loaded logging configuration from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded logging configuration from {config_path}")
             return config
         except configparser.Error as e:
+            self.logger.error(f"Failed to parse logging_config.ini: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to parse logging_config.ini: {str(e)}")
         except Exception as e:
+            self.logger.error(f"Failed to load logging_config.ini: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to load logging_config.ini: {str(e)}")
 
     def load_metadata(self, datasource_name: str, schemas: Optional[List[str]] = None) -> Dict:
@@ -304,26 +365,36 @@ class ConfigUtils:
         metadata = {}
         schemas = schemas or ["default"]
         if not isinstance(schemas, list):
-            logging.warning(f"Invalid schemas input: {schemas}, defaulting to ['default']")
+            self.logger.warning(f"Invalid schemas input: {schemas}, defaulting to ['default']")
             schemas = ["default"]
         for schema in schemas:
             if not isinstance(schema, str) or not schema.strip() or len(schema) < 2:
-                logging.warning(f"Skipping invalid schema: {schema}")
+                self.logger.warning(f"Skipping invalid schema: {schema}")
                 continue
             schema = schema.strip().lower()
             metadata_path = self.get_datasource_data_dir(datasource_name) / f"metadata_data_{schema}.json"
-            logging.debug(f"Loading metadata for schema {schema} from {metadata_path}")
+            self.logger.debug(f"Loading metadata for schema {schema} from {metadata_path}")
             try:
                 if metadata_path.exists():
                     with open(metadata_path, "r") as f:
-                        metadata[schema] = json.load(f)
+                        content = f.read()
+                        metadata[schema] = json.loads(content)
+                    self.logger.debug(f"Loaded metadata for schema {schema}")
+                    if self.enable_component_logging:
+                        print(f"Component Output: Loaded metadata for schema {schema}")
                 else:
                     metadata[schema] = {}
+                    self.logger.debug(f"No metadata file found for schema {schema}")
             except json.JSONDecodeError as e:
-                logging.error(f"Failed to parse {metadata_path}: {str(e)}")
+                self.logger.error(f"Failed to parse {metadata_path}: {str(e)}\n{traceback.format_exc()}")
+                try:
+                    snippet = content[:100] if 'content' in locals() else "N/A"
+                    self.logger.debug(f"Metadata file snippet: {snippet}")
+                except NameError:
+                    pass
                 raise ConfigError(f"Failed to parse {metadata_path}: {str(e)}")
             except Exception as e:
-                logging.error(f"Failed to load metadata for schema {schema}: {str(e)}")
+                self.logger.error(f"Failed to load metadata for schema {schema}: {str(e)}\n{traceback.format_exc()}")
                 raise ConfigError(f"Failed to load metadata for schema {schema}: {str(e)}")
         return metadata
 
@@ -342,8 +413,10 @@ class ConfigUtils:
         datasource_dir = self.data_dir / datasource_name
         try:
             datasource_dir.mkdir(parents=True, exist_ok=True)
-            logging.debug(f"Ensured datasource directory exists: {datasource_dir}")
+            self.logger.debug(f"Ensured datasource directory exists: {datasource_dir}")
+            if self.enable_component_logging:
+                print(f"Component Output: Ensured datasource directory exists: {datasource_dir}")
             return datasource_dir
         except OSError as e:
-            logging.error(f"Failed to create datasource directory {datasource_dir}: {str(e)}")
+            self.logger.error(f"Failed to create datasource directory {datasource_dir}: {str(e)}\n{traceback.format_exc()}")
             raise ConfigError(f"Failed to create datasource directory {datasource_dir}: {str(e)}")

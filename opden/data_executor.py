@@ -7,13 +7,13 @@ import pandasql as psql
 import s3fs
 import pyarrow.dataset as ds
 import pyarrow.csv as csv
-import logging
-import traceback
 from openai import AzureOpenAI
 from config.utils import ConfigUtils, ConfigError
 from proga.prompt_generator import PromptGenerator
 from storage.storage_manager import StorageManager, StorageError
 from storage.db_manager import DBManager, DBError
+from config.logging_setup import LoggingSetup
+import traceback
 
 class ExecutionError(Exception):
     """Custom exception for data execution errors."""
@@ -32,29 +32,32 @@ class DataExecutor:
         temp_dir (Path): Temporary directory for query results.
         storage_manager (StorageManager): Storage manager instance.
         db_manager (DBManager): Database manager instance.
+        enable_component_logging (bool): Flag for component output logging.
     """
 
-    def __init__(self, config_utils: ConfigUtils, logger: logging.Logger):
+    def __init__(self, config_utils: ConfigUtils):
         """Initialize DataExecutor.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
-            logger (logging.Logger): System logger.
 
         Raises:
             ExecutionError: If initialization fails.
         """
         self.config_utils = config_utils
-        self.logger = logger
+        self.logger = LoggingSetup.get_logger(__name__)
+        self.enable_component_logging = LoggingSetup.LOGGING_CONFIG.get("enable_component_logging", False)
         try:
             self.llm_config = self._load_llm_config()
             self.temp_dir = Path(self.config_utils.temp_dir) / "query_results"
             self.temp_dir.mkdir(parents=True, exist_ok=True)
-            self.storage_manager = StorageManager(self.config_utils, self.logger)
-            self.db_manager = DBManager(self.config_utils, self.logger)
+            self.storage_manager = StorageManager(self.config_utils)
+            self.db_manager = DBManager(self.config_utils)
             self.logger.debug("Initialized DataExecutor")
+            if self.enable_component_logging:
+                print("Component Output: Initialized DataExecutor")
         except (ConfigError, StorageError, DBError) as e:
-            self.logger.error(f"Failed to initialize DataExecutor: {str(e)}")
+            self.logger.error(f"Failed to initialize DataExecutor: {str(e)}\n{traceback.format_exc()}")
             raise ExecutionError(f"Failed to initialize DataExecutor: {str(e)}")
 
     def _load_llm_config(self) -> Dict:
@@ -71,9 +74,11 @@ class DataExecutor:
             with open(config_path, "r") as f:
                 config = json.load(f)
             self.logger.debug(f"Loaded LLM configuration from {config_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded LLM configuration from {config_path}")
             return config
         except (json.JSONDecodeError, FileNotFoundError) as e:
-            self.logger.error(f"Failed to load llm_config.json: {str(e)}")
+            self.logger.error(f"Failed to load llm_config.json: {str(e)}\n{traceback.format_exc()}")
             raise ExecutionError(f"Failed to load llm_config.json: {str(e)}")
 
     def _init_s3_filesystem(self) -> s3fs.S3FileSystem:
@@ -89,11 +94,13 @@ class DataExecutor:
             aws_config = self.config_utils.load_aws_config()
             access_key = aws_config.get("aws_access_key_id")
             secret_key = aws_config.get("aws_secret_access_key")
-            fs = s3fs.S3FileSystem(key=access_key, secret=secret_key) if access_key and secret_key else s3fs.S3FileSystem(anon=True)
+            fs = s3fs.S3FileSystem(key=access_key, secret_key=secret_key) if access_key and secret_key else s3fs.S3FileSystem(anon=True)
             self.logger.debug("Initialized S3 filesystem")
+            if self.enable_component_logging:
+                print("Component Output: Initialized S3 filesystem")
             return fs
         except ConfigError as e:
-            self.logger.error(f"Failed to initialize S3 filesystem: {str(e)}")
+            self.logger.error(f"Failed to initialize S3 filesystem: {str(e)}\n{traceback.format_exc()}")
             raise ExecutionError(f"Failed to initialize S3 filesystem: {str(e)}")
 
     def _call_sql_query(self, system_prompt: str, user_prompt: str, datasource: Dict, schemas: List[str]) -> Optional[str]:
@@ -110,23 +117,25 @@ class DataExecutor:
         """
         try:
             if self.llm_config.get("mock_enabled", False):
-                prompt_generator = PromptGenerator(self.config_utils, self.logger)
+                prompt_generator = PromptGenerator(self.config_utils)
                 for attempt in range(3):  # Retry twice
-                    sql_query = prompt_generator.generate_sql(datasource, system_prompt + user_prompt, schemas=schemas)
+                    sql_query = prompt_generator.mock_llm_call(datasource, system_prompt + user_prompt, schemas)
                     if sql_query and not sql_query.startswith("#") and self._validate_sql_query(sql_query):
-                        self.logger.debug(f"Returning mock SQL query (attempt {attempt + 1}): {sql_query}")
+                        self.logger.debug(f"Returning mock SQL query (attempt {attempt + 1}): {sql_query[:100]}...")
+                        if self.enable_component_logging:
+                            print(f"Component Output: Generated mock SQL query, attempt {attempt + 1}, length {len(sql_query)}")
                         return sql_query
                     self.logger.warning(f"Invalid mock SQL query on attempt {attempt + 1} for schemas {schemas}: {sql_query}")
                 self.logger.error(f"Failed to generate valid mock SQL query after retries for schemas {schemas}")
                 return None
             azure_config = self.config_utils.load_azure_config()
-            required_keys = ["endpoint", "api_key"]
+            required_keys = ["azure_endpoint", "api_key"]
             if not all(key in azure_config for key in required_keys):
                 missing = [k for k in required_keys if k not in azure_config]
                 self.logger.error(f"Missing Azure configuration keys: {missing}")
                 raise ExecutionError(f"Missing Azure configuration keys: {missing}")
             client = AzureOpenAI(
-                azure_endpoint=azure_config["endpoint"],
+                azure_endpoint=azure_config["azure_endpoint"],
                 api_key=azure_config["api_key"],
                 api_version=self.llm_config.get("api_version", "2024-12-01-preview")
             )
@@ -145,14 +154,16 @@ class DataExecutor:
             match = re.search(markdown_pattern, sql_query)
             if match:
                 sql_query = match.group(1).strip()
-                self.logger.debug(f"Extracted SQL query from markdown: {sql_query}")
+                self.logger.debug(f"Extracted SQL query from markdown: {sql_query[:100]}...")
             elif sql_query.startswith("```sql") and sql_query.endswith("```"):
                 sql_query = sql_query[6:-3].strip()
-                self.logger.debug(f"Extracted SQL query from markdown fallback: {sql_query}")
+                self.logger.debug(f"Extracted SQL query from markdown fallback: {sql_query[:100]}...")
             if not self._validate_sql_query(sql_query):
-                self.logger.warning(f"Invalid SQL query generated by Azure Open AI: {sql_query}")
+                self.logger.warning(f"Invalid SQL query generated by Azure Open AI: {sql_query[:100]}...")
                 return None
-            self.logger.debug(f"Generated SQL query for datasource {datasource['name']}, schemas {schemas}: {sql_query}")
+            self.logger.debug(f"Generated SQL query for datasource {datasource['name']}, schemas {schemas}: {sql_query[:100]}...")
+            if self.enable_component_logging:
+                print(f"Component Output: Generated SQL query for schemas {schemas}, length {len(sql_query)}")
             return sql_query
         except Exception as e:
             self.logger.error(f"Failed to call LLM for datasource {datasource['name']}, schemas {schemas}: {str(e)}\n{traceback.format_exc()}")
@@ -172,14 +183,17 @@ class DataExecutor:
             return False
         sql_query = sql_query.strip()
         if not re.match(r"^\s*(SELECT|WITH)\s+", sql_query, re.IGNORECASE):
-            self.logger.warning(f"SQL query missing SELECT or WITH clause: {sql_query}")
+            self.logger.warning(f"SQL query missing SELECT or WITH clause: {sql_query[:100]}...")
             return False
         if "FROM" not in sql_query.upper():
-            self.logger.warning(f"SQL query missing FROM clause: {sql_query}")
+            self.logger.warning(f"SQL query missing FROM clause: {sql_query[:100]}...")
             return False
         if not sql_query.endswith(";"):
             sql_query += ";"
-            self.logger.debug(f"Appended semicolon to SQL query: {sql_query}")
+            self.logger.debug(f"Appended semicolon to SQL query: {sql_query[:100]}...")
+        self.logger.debug(f"Validated SQL query: {sql_query[:100]}...")
+        if self.enable_component_logging:
+            print(f"Component Output: Validated SQL query, length {len(sql_query)}")
         return True
 
     def _get_s3_dataframe(self, schema: str, datasource: Dict, table_name: str) -> Optional[pd.DataFrame]:
@@ -222,6 +236,8 @@ class DataExecutor:
             table = dataset.to_table()
             df = table.to_pandas()
             self.logger.debug(f"Loaded {len(df)} rows for table {table_name} from {s3_path} in schema {schema}")
+            if self.enable_component_logging:
+                print(f"Component Output: Loaded {len(df)} rows for table {table_name} in schema {schema}")
             return df
         except Exception as e:
             self.logger.error(f"Failed to load S3 data for table {table_name} in schema {schema}: {str(e)}\n{traceback.format_exc()}")
@@ -296,6 +312,8 @@ class DataExecutor:
                 csv_path.parent.mkdir(parents=True, exist_ok=True)
                 result_df.to_csv(csv_path, index=False)
                 self.logger.info(f"Generated output for NLQ '{nlq}' in schema {schema}: {csv_path}, rows: {len(result_df)}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Executed S3 query for NLQ '{nlq}' in schema {schema}, {len(result_df)} rows saved to {csv_path}")
                 return sample_data, str(csv_path), sql_query
             except psql.PandasSQLException as e:
                 self.logger.error(f"S3 query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
@@ -351,6 +369,8 @@ class DataExecutor:
             csv_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(csv_path, index=False)
             self.logger.info(f"Generated output for NLQ '{nlq}' in schema {schema}: {csv_path}, rows: {len(df)}")
+            if self.enable_component_logging:
+                print(f"Component Output: Executed SQL Server query for NLQ '{nlq}' in schema {schema}, {len(df)} rows saved to {csv_path}")
             return sample_data, str(csv_path), sql_query
         except DBError as e:
             self.logger.error(f"SQL Server query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
@@ -443,6 +463,9 @@ class DataExecutor:
                 self.storage_manager.store_rejected_query(
                     datasource, nlq, schemas[0] if schemas else "unknown", "No data returned", user, "NO_DATA"
                 )
+            self.logger.debug(f"Query execution completed for NLQ '{nlq}', schemas {schemas}, result rows: {len(results[0]) if results[0] is not None else 0}")
+            if self.enable_component_logging:
+                print(f"Component Output: Query execution completed for NLQ '{nlq}', schemas {schemas}, result rows {len(results[0]) if results[0] is not None else 0}")
             return results
         except ExecutionError as e:
             self.logger.error(f"Failed to execute query for NLQ '{nlq}' on datasource {datasource['name']}, schemas {schemas}: {str(e)}\n{traceback.format_exc()}")
@@ -459,5 +482,7 @@ class DataExecutor:
         try:
             self.db_manager.close_connections()
             self.logger.debug("Closed database connections")
+            if self.enable_component_logging:
+                print("Component Output: Closed database connections")
         except DBError as e:
-            self.logger.warning(f"Failed to close database connections: {str(e)}")
+            self.logger.warning(f"Failed to close database connections: {str(e)}\n{traceback.format_exc()}")
