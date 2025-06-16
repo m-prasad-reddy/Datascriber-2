@@ -149,7 +149,7 @@ class PromptGenerator:
             base_prompt = self.llm_config["prompt_settings"]["system_prompt"]
             file_type = datasource["type"]
             if file_type == "s3":
-                file_type = self.storage_manager.file_type or "parquet"
+                file_type = self.storage_manager.file_type or "csv"
             prompt = (
                 f"{base_prompt}\n"
                 f"Datasource: {datasource['name']} ({file_type})\n"
@@ -180,11 +180,19 @@ class PromptGenerator:
                         self.logger.error(f"Failed to store rejected query for schema {schema}: {str(store_e)}\n{traceback.format_exc()}")
                     continue
             date_function = "YEAR(column)" if datasource["type"] == "sqlserver" else "EXTRACT(YEAR FROM column)"
-            prompt += (
-                f"{'Use pandasql for S3 queries. ' if datasource['type'] == 's3' else ''}"
-                f"Use {date_function} for dates, LOWER and LIKE for strings, "
-                f"SUM and AVG for numerics. Ensure SQL is valid for {file_type}."
-            )
+            if datasource["type"] == "s3":
+                prompt += (
+                    f"Use DuckDB SQL for S3 queries. Access files using 'read_csv('s3://bucket/path/to/file.csv')' for CSV or "
+                    f"'read_parquet('s3://bucket/path/to/file.parquet')' for Parquet. "
+                    f"Table names should match the file names without extensions. "
+                    f"Use {date_function} for dates, LOWER and LIKE for strings, SUM and AVG for numerics. "
+                    f"Ensure SQL is valid for DuckDB."
+                )
+            else:
+                prompt += (
+                    f"Use {date_function} for dates, LOWER and LIKE for strings, "
+                    f"SUM and AVG for numerics. Ensure SQL is valid for {file_type}."
+                )
             self.logger.debug(f"Generated system prompt for schemas {schemas}, length: {len(prompt)}")
             if self.enable_component_logging:
                 print(f"Component Output: Generated system prompt for schemas {schemas}, length {len(prompt)}")
@@ -255,6 +263,8 @@ class PromptGenerator:
                 prediction["columns"] = self._get_specific_columns(nlq, schemas[0], datasource, self._get_metadata(datasource, schemas[0]))
                 prediction["ddl"] = ""
             max_length = self.llm_config["prompt_settings"]["max_prompt_length"]
+            file_type = self.storage_manager.file_type or "csv"
+            s3_path = datasource.get("s3_path", "")
             prompt = (
                 f"User Query: {nlq}\n"
                 f"Schemas: {', '.join(schemas)}\n"
@@ -297,12 +307,20 @@ class PromptGenerator:
                 if not metadata_added:
                     self.logger.debug(f"No metadata added for NLQ: {nlq}, relying on prediction")
             date_function = "YEAR(column)" if datasource["type"] == "sqlserver" else "EXTRACT(YEAR FROM column)"
-            prompt += (
-                f"Generate a valid SQL query for the {datasource['type']} datasource. "
-                f"{'Use pandasql for S3 queries. ' if datasource['type'] == 's3' else ''}"
-                f"Use {date_function} for dates, LOWER and LIKE for strings, "
-                f"SUM and AVG for numerics."
-            )
+            if datasource["type"] == "s3":
+                prompt += (
+                    f"Generate a valid DuckDB SQL query for the S3 datasource. "
+                    f"Access files using 'read_{'csv' if file_type == 'csv' else 'parquet'}('{s3_path}')'. "
+                    f"Table names should match the file names without extensions. "
+                    f"Use {date_function} for dates, LOWER and LIKE for strings, SUM and AVG for numerics. "
+                    f"Return only the SQL query wrapped in ```sql\n```."
+                )
+            else:
+                prompt += (
+                    f"Generate a valid SQL query for the {datasource['type']} datasource. "
+                    f"Use {date_function} for dates, LOWER and LIKE for strings, "
+                    f"SUM and AVG for numerics."
+                )
             if len(prompt) > max_length:
                 self.logger.warning(f"Prompt exceeds max length {len(prompt)}, truncating to minimal, NLQ: {nlq}")
                 prompt = (
@@ -311,7 +329,7 @@ class PromptGenerator:
                     f"Datasource: {datasource['name']}\n"
                     f"Entities: {json.dumps(entities, indent=2)}\n"
                     f"Predicted Tables: {', '.join(prediction['tables'])}\n"
-                    f"Generate a valid SQL query."
+                    f"Generate a valid DuckDB SQL query."
                 )
             self.logger.debug(f"Generated user prompt for NLQ: {nlq}, length: {len(prompt)}")
             if self.enable_component_logging:
@@ -557,11 +575,21 @@ class PromptGenerator:
                 end_idx = response.find(end_marker, start_idx)
                 if end_idx != -1:
                     sql = response[start_idx:end_idx].strip()
-                    self.logger.debug(f"Extracted SQL from response: {sql}")
-                    return sql
-            sql = response.strip()
-            self.logger.debug(f"Fallback SQL extraction: {sql}")
-            return sql
+                    if "SELECT" in sql.upper() or "WITH" in sql.upper():
+                        self.logger.debug(f"Extracted SQL from response: {sql}")
+                        return sql
+                    else:
+                        self.logger.warning(f"Extracted SQL lacks SELECT or WITH clause: {sql}")
+                        return ""
+            # Fallback: Try to find raw SQL without markers
+            lines = response.split("\n")
+            sql_lines = [line.strip() for line in lines if line.strip().upper().startswith(("SELECT", "WITH"))]
+            if sql_lines:
+                sql = "\n".join(sql_lines).strip()
+                self.logger.debug(f"Fallback SQL extraction: {sql}")
+                return sql
+            self.logger.warning(f"No valid SQL found in response: {response}")
+            return ""
         except Exception as e:
             self.logger.error(f"Failed to extract SQL from response: {str(e)}\n{traceback.format_exc()}")
             return ""
@@ -595,9 +623,11 @@ class PromptGenerator:
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=1000  # Increased to prevent truncation
             )
-            sql = self._extract_sql(response.choices[0].message.content)
+            raw_response = response.choices[0].message.content
+            self.logger.debug(f"Raw LLM response: {raw_response}")
+            sql = self._extract_sql(raw_response)
             if not sql:
                 self.logger.warning(f"No valid SQL generated for schemas {schemas}")
                 sql = "# No valid SQL generated"

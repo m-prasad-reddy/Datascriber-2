@@ -1,13 +1,12 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 import pandas as pd
-import pandasql as psql
 import s3fs
 import pyarrow.dataset as ds
 import pyarrow.csv as csv
-from openai import AzureOpenAI
+import duckdb
 from config.utils import ConfigUtils, ConfigError
 from proga.prompt_generator import PromptGenerator
 from storage.storage_manager import StorageManager, StorageError
@@ -23,7 +22,7 @@ class DataExecutor:
     """Data executor for running SQL queries on SQL Server or S3 datasources.
 
     Executes queries generated from prompts, handles connections, and saves results.
-    Supports Azure Open AI for SQL generation and pandasql with PyArrow for S3 queries.
+    Supports DuckDB for S3 queries with dynamic table loading.
 
     Attributes:
         config_utils (ConfigUtils): Configuration utility instance.
@@ -33,6 +32,7 @@ class DataExecutor:
         storage_manager (StorageManager): Storage manager instance.
         db_manager (DBManager): Database manager instance.
         enable_component_logging (bool): Flag for component output logging.
+        prompt_generator (PromptGenerator): Prompt generator instance.
     """
 
     def __init__(self, config_utils: ConfigUtils):
@@ -53,6 +53,7 @@ class DataExecutor:
             self.temp_dir.mkdir(parents=True, exist_ok=True)
             self.storage_manager = StorageManager(self.config_utils)
             self.db_manager = DBManager(self.config_utils)
+            self.prompt_generator = PromptGenerator(self.config_utils)
             self.logger.debug("Initialized DataExecutor")
             if self.enable_component_logging:
                 print("Component Output: Initialized DataExecutor")
@@ -103,74 +104,8 @@ class DataExecutor:
             self.logger.error(f"Failed to initialize S3 filesystem: {str(e)}\n{traceback.format_exc()}")
             raise ExecutionError(f"Failed to initialize S3 filesystem: {str(e)}")
 
-    def _call_sql_query(self, system_prompt: str, user_prompt: str, datasource: Dict, schemas: List[str]) -> Optional[str]:
-        """Call Azure Open AI or mock LLM to generate SQL query.
-
-        Args:
-            system_prompt: System prompt with schema and metadata.
-            user_prompt: User prompt with NLQ and context.
-            datasource: Datasource configuration.
-            schemas: List of schema names.
-
-        Returns:
-            Optional[str]: Generated SQL query or None if call fails.
-        """
-        try:
-            if self.llm_config.get("mock_enabled", False):
-                prompt_generator = PromptGenerator(self.config_utils)
-                for attempt in range(3):  # Retry twice
-                    sql_query = prompt_generator.mock_llm_call(datasource, system_prompt + user_prompt, schemas)
-                    if sql_query and not sql_query.startswith("#") and self._validate_sql_query(sql_query):
-                        self.logger.debug(f"Returning mock SQL query (attempt {attempt + 1}): {sql_query[:100]}...")
-                        if self.enable_component_logging:
-                            print(f"Component Output: Generated mock SQL query, attempt {attempt + 1}, length {len(sql_query)}")
-                        return sql_query
-                    self.logger.warning(f"Invalid mock SQL query on attempt {attempt + 1} for schemas {schemas}: {sql_query}")
-                self.logger.error(f"Failed to generate valid mock SQL query after retries for schemas {schemas}")
-                return None
-            azure_config = self.config_utils.load_azure_config()
-            required_keys = ["azure_endpoint", "api_key"]
-            if not all(key in azure_config for key in required_keys):
-                missing = [k for k in required_keys if k not in azure_config]
-                self.logger.error(f"Missing Azure configuration keys: {missing}")
-                raise ExecutionError(f"Missing Azure configuration keys: {missing}")
-            client = AzureOpenAI(
-                azure_endpoint=azure_config["azure_endpoint"],
-                api_key=azure_config["api_key"],
-                api_version=self.llm_config.get("api_version", "2024-12-01-preview")
-            )
-            response = client.chat.completions.create(
-                model=self.llm_config.get("model_name", "gpt-4o"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=self.llm_config["prompt_settings"].get("max_tokens", 1000),
-                temperature=self.llm_config["prompt_settings"].get("temperature", 0.1)
-            )
-            sql_query = response.choices[0].message.content.strip()
-            # Parse markdown or raw SQL
-            markdown_pattern = r"```(?:sql)?\s*([\s\S]*?)\s*```"
-            match = re.search(markdown_pattern, sql_query)
-            if match:
-                sql_query = match.group(1).strip()
-                self.logger.debug(f"Extracted SQL query from markdown: {sql_query[:100]}...")
-            elif sql_query.startswith("```sql") and sql_query.endswith("```"):
-                sql_query = sql_query[6:-3].strip()
-                self.logger.debug(f"Extracted SQL query from markdown fallback: {sql_query[:100]}...")
-            if not self._validate_sql_query(sql_query):
-                self.logger.warning(f"Invalid SQL query generated by Azure Open AI: {sql_query[:100]}...")
-                return None
-            self.logger.debug(f"Generated SQL query for datasource {datasource['name']}, schemas {schemas}: {sql_query[:100]}...")
-            if self.enable_component_logging:
-                print(f"Component Output: Generated SQL query for schemas {schemas}, length {len(sql_query)}")
-            return sql_query
-        except Exception as e:
-            self.logger.error(f"Failed to call LLM for datasource {datasource['name']}, schemas {schemas}: {str(e)}\n{traceback.format_exc()}")
-            return None
-
     def _validate_sql_query(self, sql_query: str) -> bool:
-        """Validate basic SQL query syntax.
+        """Validate basic SQL query syntax for DuckDB.
 
         Args:
             sql_query: SQL query to validate.
@@ -182,11 +117,10 @@ class DataExecutor:
             self.logger.warning("SQL query is empty or not a string")
             return False
         sql_query = sql_query.strip()
-        if not re.match(r"^\s*(SELECT|WITH)\s+", sql_query, re.IGNORECASE):
-            self.logger.warning(f"SQL query missing SELECT or WITH clause: {sql_query[:100]}...")
-            return False
-        if "FROM" not in sql_query.upper():
-            self.logger.warning(f"SQL query missing FROM clause: {sql_query[:100]}...")
+        # Allow DuckDB-specific read_csv/read_parquet or standard SELECT/WITH
+        if not (re.match(r"^\s*(SELECT|WITH)\s+", sql_query, re.IGNORECASE) or
+                "read_csv(" in sql_query.lower() or "read_parquet(" in sql_query.lower()):
+            self.logger.warning(f"SQL query missing SELECT, WITH, or DuckDB read function: {sql_query[:100]}...")
             return False
         if not sql_query.endswith(";"):
             sql_query += ";"
@@ -196,52 +130,123 @@ class DataExecutor:
             print(f"Component Output: Validated SQL query, length {len(sql_query)}")
         return True
 
-    def _get_s3_dataframe(self, schema: str, datasource: Dict, table_name: str) -> Optional[pd.DataFrame]:
-        """Load S3 data into a DataFrame using PyArrow.
+    def _extract_tables_from_sql(self, sql_query: str) -> Set[str]:
+        """Extract table names from SQL query using regex.
+
+        Args:
+            sql_query (str): SQL query to parse.
+
+        Returns:
+            Set[str]: Set of table names referenced in the query.
+        """
+        try:
+            # Match table names after FROM or JOIN, ignoring subqueries and read_csv/read_parquet
+            table_pattern = r"(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*\()"
+            tables = set()
+            for match in re.finditer(table_pattern, sql_query, re.IGNORECASE):
+                table_name = match.group(1)
+                if not table_name.lower().startswith(("read_csv", "read_parquet")):
+                    tables.add(table_name)
+            self.logger.debug(f"Extracted tables from SQL query: {tables}")
+            if self.enable_component_logging:
+                print(f"Component Output: Extracted tables from SQL query: {tables}")
+            return tables
+        except Exception as e:
+            self.logger.error(f"Failed to extract tables from SQL query: {str(e)}\n{traceback.format_exc()}")
+            return set()
+
+    def _get_s3_duckdb_connection(self, schema: str, datasource: Dict, table_names: List[str]) -> Tuple[Optional[duckdb.DuckDBPyConnection], List[str]]:
+        """Load S3 data for multiple tables into a DuckDB in-memory database.
 
         Args:
             schema: Schema name.
             datasource: Datasource configuration.
-            table_name: Table name.
+            table_names: List of table names to load.
 
         Returns:
-            Optional[pd.DataFrame]: DataFrame or None if loading fails.
+            Tuple[Optional[duckdb.DuckDBPyConnection], List[str]]: DuckDB connection and list of loaded tables, or (None, []) if loading fails.
         """
         try:
-            if not table_name or table_name.isspace() or any(c in table_name for c in ["/", "\\"]):
-                self.logger.error(f"Invalid table name: {table_name}")
-                raise ExecutionError(f"Invalid table name: {table_name}")
             self.storage_manager._set_datasource(datasource)
             metadata = self.storage_manager.get_metadata(datasource, schema)
             valid_tables = [t["name"] for t in metadata.get("tables", []) if isinstance(t, dict) and "name" in t]
-            if table_name not in valid_tables:
-                self.logger.error(f"Table {table_name} not found in schema {schema} metadata")
-                return None
-            s3_path = self.storage_manager.get_s3_path(schema, table_name)
-            file_format = self.storage_manager.file_type
-            if not s3_path or not file_format:
-                self.logger.error(f"No valid files found for table {table_name} in schema {schema}")
-                raise ExecutionError(f"No valid files found for table {table_name}")
-            s3fs = self._init_s3_filesystem()
-            if file_format == "csv":
-                csv_format = ds.CsvFileFormat(parse_options=csv.ParseOptions(delimiter=","))
-                dataset = ds.dataset(s3_path, format=csv_format, filesystem=s3fs)
-            elif file_format == "parquet":
-                dataset = ds.dataset(s3_path, format="parquet", filesystem=s3fs)
-            elif file_format == "orc":
-                dataset = ds.dataset(s3_path, format="orc", filesystem=s3fs)
-            else:
-                self.logger.error(f"Unsupported file format: {file_format}")
-                raise ExecutionError(f"Unsupported file format: {file_format}")
-            table = dataset.to_table()
-            df = table.to_pandas()
-            self.logger.debug(f"Loaded {len(df)} rows for table {table_name} from {s3_path} in schema {schema}")
+            self.logger.debug(f"Available tables in schema {schema} metadata: {valid_tables}")
             if self.enable_component_logging:
-                print(f"Component Output: Loaded {len(df)} rows for table {table_name} in schema {schema}")
-            return df
+                print(f"Component Output: Available tables in schema {schema}: {valid_tables}")
+            tables_to_load = [t for t in table_names if t in valid_tables]
+            if not tables_to_load:
+                self.logger.warning(f"No valid tables to load: requested {table_names}, available {valid_tables}")
+                return None, []
+
+            aws_config = self.config_utils.load_aws_config()
+            access_key = aws_config.get("aws_access_key_id")
+            secret_key = aws_config.get("aws_secret_access_key")
+            region = aws_config.get("region")
+            if not all([access_key, secret_key, region]):
+                self.logger.error(f"Missing AWS config values: access_key={bool(access_key)}, secret_key={bool(secret_key)}, region={bool(region)}")
+                return None, []
+
+            con = duckdb.connect()
+            con.execute(f"""
+                SET s3_access_key_id = '{access_key}';
+                SET s3_secret_access_key = '{secret_key}';
+                SET s3_region = '{region}';
+            """)
+            delimiter = metadata.get("delimiter", ",")
+            loaded_tables = []
+            file_type = self.storage_manager.file_type
+            prefix = f"{datasource['connection']['database']}/"
+            for table in tables_to_load:
+                part_files = self.storage_manager._get_table_part_files(table, prefix)
+                if not part_files:
+                    self.logger.warning(f"No part files found for table {table} in schema {schema}")
+                    continue
+                s3_path = f"s3://{datasource['connection']['bucket_name']}/{part_files[0]}"
+                self.logger.debug(f"Attempting to load table {table} from {s3_path} with file type {file_type}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Loading table {table} from {s3_path}")
+                try:
+                    if file_type == "csv":
+                        con.execute(f"""
+                            CREATE OR REPLACE VIEW {table} AS
+                            SELECT * FROM read_csv('{s3_path}', delim='{delimiter}', auto_detect=true);
+                        """)
+                    elif file_type == "parquet":
+                        con.execute(f"""
+                            CREATE OR REPLACE VIEW {table} AS
+                            SELECT * FROM read_parquet('{s3_path}');
+                        """)
+                    elif file_type == "orc":
+                        con.execute(f"""
+                            CREATE OR REPLACE VIEW {table} AS
+                            SELECT * FROM read_parquet('{s3_path}');
+                        """)
+                    else:
+                        self.logger.warning(f"Unsupported file type {file_type} for table {table}")
+                        continue
+                    loaded_tables.append(table)
+                    self.logger.info(f"Successfully loaded table {table} from {s3_path} into DuckDB")
+                    if self.enable_component_logging:
+                        print(f"Component Output: Loaded table {table} from {s3_path} into DuckDB")
+                except duckdb.IOException as e:
+                    self.logger.error(f"DuckDB IO error loading table {table} from {s3_path}: {str(e)}\n{traceback.format_exc()}")
+                    continue
+                except duckdb.Error as e:
+                    self.logger.error(f"DuckDB error loading table {table} from {s3_path}: {str(e)}\n{traceback.format_exc()}")
+                    continue
+            if not loaded_tables:
+                self.logger.error(f"No tables loaded for schema {schema}, requested tables: {table_names}")
+                con.close()
+                return None, []
+            self.logger.debug(f"Created DuckDB connection with {len(loaded_tables)} tables {loaded_tables} in schema {schema}")
+            if self.enable_component_logging:
+                print(f"Component Output: Created DuckDB connection for tables {loaded_tables} in schema {schema}")
+            return con, loaded_tables
         except Exception as e:
-            self.logger.error(f"Failed to load S3 data for table {table_name} in schema {schema}: {str(e)}\n{traceback.format_exc()}")
-            return None
+            self.logger.error(f"Failed to get DuckDB connection for tables {table_names} in schema {schema}: {str(e)}\n{traceback.format_exc()}")
+            if 'con' in locals():
+                con.close()
+            return None, []
 
     def _execute_s3_query(
         self,
@@ -252,7 +257,7 @@ class DataExecutor:
         datasource: Dict,
         prediction: Optional[Dict] = None
     ) -> Tuple[Optional[pd.DataFrame], Optional[str], str]:
-        """Execute query on S3 data using pandasql and PyArrow across multiple schemas.
+        """Execute query on S3 data using DuckDB across multiple schemas.
 
         Args:
             sql_query: SQL query to execute.
@@ -274,35 +279,87 @@ class DataExecutor:
         self.storage_manager._set_datasource(datasource)
         for schema in schemas:
             try:
+                # Get predicted tables from TIA
                 tables = prediction.get("tables", []) if prediction else []
-                if "customer" in nlq.lower():
-                    tables = ["customers"] if schema == "default" else ["sales.customers"]
-                if not tables:
-                    metadata = self.storage_manager.get_metadata(datasource, schema)
-                    tables = [t["name"] for t in metadata.get("tables", []) if isinstance(t, dict) and "name" in t]
-                    if "customer" in nlq.lower():
-                        tables = [t for t in tables if t == "customers"]
-                if not tables:
-                    self.logger.warning(f"No tables identified for schema {schema}, NLQ: {nlq}")
-                    self.storage_manager.store_rejected_query(
-                        datasource, nlq, schema, f"No tables identified in schema {schema}", user, "NO_TABLES"
-                    )
-                    continue
-                locals_dict = {}
-                for table in tables:
-                    df = self._get_s3_dataframe(schema, datasource, table)
-                    if df is None:
-                        self.logger.warning(f"Failed to load S3 data for table {table} in schema {schema}, NLQ: {nlq}")
+                # Get metadata tables
+                metadata = self.storage_manager.get_metadata(datasource, schema)
+                metadata_tables = [t["name"] for t in metadata.get("tables", []) if isinstance(t, dict) and "name" in t]
+                self.logger.debug(f"Metadata tables for schema {schema}: {metadata_tables}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Metadata tables for schema {schema}: {metadata_tables}")
+                if not tables and metadata_tables:
+                    tables = metadata_tables
+                    self.logger.debug(f"Using metadata tables as fallback: {tables}")
+                # Extract tables from SQL query
+                sql_tables = self._extract_tables_from_sql(sql_query)
+                self.logger.debug(f"SQL query tables: {sql_tables}")
+                if self.enable_component_logging:
+                    print(f"Component Output: SQL query tables: {sql_tables}")
+                # If query uses read_csv/read_parquet directly, execute without loading tables
+                if "read_csv(" in sql_query.lower() or "read_parquet(" in sql_query.lower():
+                    con = duckdb.connect()
+                    aws_config = self.config_utils.load_aws_config()
+                    con.execute(f"""
+                        SET s3_access_key_id = '{aws_config.get("aws_access_key_id")}';
+                        SET s3_secret_access_key = '{aws_config.get("aws_secret_access_key")}';
+                        SET s3_region = '{aws_config.get("region")}';
+                    """)
+                    try:
+                        result_df = con.execute(sql_query).fetch_df()
+                    except duckdb.Error as e:
+                        self.logger.error(f"DuckDB query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
                         self.storage_manager.store_rejected_query(
-                            datasource, nlq, schema, f"Failed to load data for table {table}", user, "DATA_LOAD_ERROR"
+                            datasource, nlq, schema, f"DuckDB query failed: {str(e)}", user, "DUCKDB_ERROR"
+                        )
+                        con.close()
+                        continue
+                    finally:
+                        con.close()
+                else:
+                    # Load tables for standard queries
+                    if not tables and not sql_tables:
+                        self.logger.warning(f"No tables identified for schema {schema}, NLQ: {nlq}")
+                        self.storage_manager.store_rejected_query(
+                            datasource, nlq, schema, f"No tables identified in schema {schema}", user, "NO_TABLES"
                         )
                         continue
-                    locals_dict[table] = df
-                result_df = psql.sqldf(sql_query, locals_dict)
+                    tables_to_load = list(set(tables) | sql_tables)
+                    self.logger.debug(f"Loading tables {tables_to_load} for NLQ: {nlq}")
+                    if self.enable_component_logging:
+                        print(f"Component Output: Loading tables {tables_to_load} for NLQ: {nlq}")
+                    con, loaded_tables = self._get_s3_duckdb_connection(schema, datasource, tables_to_load)
+                    if con is None or not loaded_tables:
+                        self.logger.warning(f"Failed to load S3 data for tables {tables_to_load} in schema {schema}, NLQ: {nlq}")
+                        self.storage_manager.store_rejected_query(
+                            datasource, nlq, schema, f"Failed to load data for tables {tables_to_load}", user, "DATA_LOAD_ERROR"
+                        )
+                        continue
+                    missing_tables = sql_tables - set(loaded_tables)
+                    if missing_tables:
+                        self.logger.warning(f"Missing tables {missing_tables} required by SQL query for NLQ: {nlq}")
+                        self.storage_manager.store_rejected_query(
+                            datasource, nlq, schema, f"Missing tables {missing_tables} in DuckDB", user, "MISSING_TABLES"
+                        )
+                        con.close()
+                        continue
+                    try:
+                        result_df = con.execute(sql_query).fetch_df()
+                        self.logger.debug(f"Query executed successfully for NLQ: {nlq}, rows: {len(result_df)}")
+                        if self.enable_component_logging:
+                            print(f"Component Output: Query executed, {len(result_df)} rows for NLQ: {nlq}")
+                    except duckdb.Error as e:
+                        self.logger.error(f"DuckDB query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
+                        self.storage_manager.store_rejected_query(
+                            datasource, nlq, schema, f"DuckDB query failed: {str(e)}", user, "DUCKDB_ERROR"
+                        )
+                        con.close()
+                        continue
+                    finally:
+                        con.close()
                 if result_df.empty:
                     self.logger.warning(f"No data returned for NLQ: {nlq} in schema {schema}")
                     self.storage_manager.store_rejected_query(
-                        datasource, nlq, schema, f"No data returned in schema {schema}", user, "NO_DATA"
+                        datasource, nlq, schema, f"No results returned in schema {schema}", user, "NO_DATA"
                     )
                     continue
                 sample_data = result_df.head(5)
@@ -315,12 +372,6 @@ class DataExecutor:
                 if self.enable_component_logging:
                     print(f"Component Output: Executed S3 query for NLQ '{nlq}' in schema {schema}, {len(result_df)} rows saved to {csv_path}")
                 return sample_data, str(csv_path), sql_query
-            except psql.PandasSQLException as e:
-                self.logger.error(f"S3 query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
-                self.storage_manager.store_rejected_query(
-                    datasource, nlq, schema, f"S3 query failed: {str(e)}", user, "PANDAS_SQL_ERROR"
-                )
-                continue
             except Exception as e:
                 self.logger.error(f"Unexpected error in S3 query for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
                 self.storage_manager.store_rejected_query(
@@ -328,7 +379,10 @@ class DataExecutor:
                 )
                 continue
         self.logger.error(f"S3 query execution failed for NLQ '{nlq}' across all schemas")
-        raise ExecutionError("S3 query execution failed across all schemas")
+        self.storage_manager.store_rejected_query(
+            datasource, nlq, schemas[0] if schemas else "unknown", "Query execution failed across all schemas", user, "EXECUTION_ERROR"
+        )
+        return None, None, sql_query
 
     def _execute_sql_server_query(
         self,
@@ -420,38 +474,30 @@ class DataExecutor:
         try:
             self.storage_manager._set_datasource(datasource)
             adjusted_prediction = prediction.copy() if prediction else {}
-            if "customer" in nlq.lower():
-                adjusted_prediction["tables"] = ["sales.customers" if datasource["type"] == "sqlserver" else "customers"]
-            sql_query = self._call_sql_query(system_prompt, prompt, datasource, schemas)
-            if user == "admin" and prediction and not prediction.get("is_correct", True):
-                self.logger.info(f"Processing admin feedback for NLQ: {nlq}, validated tables: {adjusted_prediction.get('tables', [])}")
-                adjusted_prompt = prompt.replace(
-                    f"Prediction: {json.dumps(prediction, indent=2)}",
-                    f"Prediction: {json.dumps(adjusted_prediction, indent=2)}"
-                )
-                sql_query = self._call_sql_query(system_prompt, adjusted_prompt, datasource, schemas)
-                if not sql_query:
-                    self.logger.error(f"No SQL query generated after admin feedback for NLQ: {nlq}, schemas: {schemas}")
-                    self.storage_manager.store_rejected_query(
-                        datasource, nlq, schemas[0] if schemas else "unknown", "No SQL query generated after feedback", user, "NO_SQL_GENERATED"
-                    )
-                    return None, None, None
-            if not sql_query and "customer" in nlq.lower():
-                self.logger.warning(f"Retrying SQL generation with adjusted prediction for NLQ: {nlq}")
-                adjusted_prompt = prompt.replace(
-                    f"Prediction: {json.dumps(prediction or {}, indent=2)}",
-                    f"Prediction: {json.dumps(adjusted_prediction, indent=2)}"
-                )
-                sql_query = self._call_sql_query(system_prompt, adjusted_prompt, datasource, schemas)
-            if not sql_query:
-                self.logger.error(f"No SQL query generated for NLQ: {nlq}, schemas: {schemas}")
+            entities = adjusted_prediction.get("entities", {})
+            tia_result = {
+                "tables": adjusted_prediction.get("tables", []),
+                "columns": adjusted_prediction.get("columns", []),
+                "ddl": adjusted_prediction.get("ddl", "")
+            }
+            sql_query = self.prompt_generator.generate_sql(
+                datasource, system_prompt, prompt, schemas, entities, tia_result, user_role=user
+            )
+            if not sql_query or sql_query.startswith("#"):
+                self.logger.error(f"No valid SQL query generated for NLQ: {nlq}, schemas: {schemas}")
                 self.storage_manager.store_rejected_query(
                     datasource, nlq, schemas[0] if schemas else "unknown", "No SQL query generated", user, "NO_SQL_GENERATED"
                 )
                 return None, None, None
-            if datasource["type"] == "sqlserver":
+            if not self._validate_sql_query(sql_query):
+                self.logger.error(f"Invalid SQL query for NLQ: {nlq}, schemas: {schemas}: {sql_query[:100]}...")
+                self.storage_manager.store_rejected_query(
+                    datasource, nlq, schemas[0] if schemas else "unknown", "Invalid SQL query", user, "INVALID_SQL"
+                )
+                return None, None, None
+            if datasource["type"].lower() == "sqlserver":
                 results = self._execute_sql_server_query(sql_query, user, nlq, datasource, schemas[0] if schemas else "unknown")
-            elif datasource["type"] == "s3":
+            elif datasource["type"].lower() == "s3":
                 results = self._execute_s3_query(sql_query, user, nlq, schemas, datasource, adjusted_prediction)
             else:
                 self.logger.error(f"Unsupported datasource type: {datasource['type']}, NLQ: {nlq}")

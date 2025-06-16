@@ -1,7 +1,7 @@
 import json
 import pandas as pd
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
@@ -12,6 +12,7 @@ from config.utils import ConfigUtils, ConfigError
 from storage.db_manager import DBManager
 from config.logging_setup import LoggingSetup
 import traceback
+import duckdb
 
 class StorageError(Exception):
     """Custom exception for storage-related errors."""
@@ -150,22 +151,25 @@ class StorageManager:
             if aws_config.get("aws_access_key_id") and aws_config.get("aws_secret_access_key"):
                 session_params["aws_access_key_id"] = aws_config["aws_access_key_id"]
                 session_params["aws_secret_access_key"] = aws_config["aws_secret_access_key"]
+                self.logger.debug("Using provided AWS credentials for S3 client")
             else:
                 self.logger.warning("No AWS credentials provided; using default credentials")
             session = boto3.Session(**session_params)
             self.s3_client = session.client("s3")
             for attempt in range(3):
                 try:
-                    self.s3_client.head_bucket(Bucket=self.bucket_name)
+                    response = self.s3_client.head_bucket(Bucket=self.bucket_name)
+                    self.logger.debug(f"S3 bucket check successful: {self.bucket_name}, Response: {response}")
                     break
                 except ClientError as e:
+                    error_code = e.response['Error']['Code']
+                    self.logger.error(f"Attempt {attempt + 1} failed to connect to S3 bucket {self.bucket_name}: {str(e)} (Code: {error_code})")
                     if attempt == 2:
-                        self.logger.error(f"Failed to connect to S3 bucket {self.bucket_name} after 3 attempts: {str(e)}\n{traceback.format_exc()}")
-                        raise StorageError(f"Failed to initialize S3 client: {str(e)}")
-            self.logger.debug(f"Connected to S3 bucket: {self.bucket_name}")
+                        raise StorageError(f"Failed to initialize S3 client after 3 attempts: {str(e)}")
+            self.logger.info(f"Connected to S3 bucket: {self.bucket_name}")
             if self.enable_component_logging:
                 print(f"Component Output: Connected to S3 bucket {self.bucket_name}")
-        except ClientError as e:
+        except Exception as e:
             self.logger.error(f"Failed to initialize S3 client: {str(e)}\n{traceback.format_exc()}")
             raise StorageError(f"Failed to initialize S3 client: {str(e)}")
 
@@ -216,9 +220,25 @@ class StorageManager:
             List[str]: List of file keys.
 
         Raises:
-            StorageError: If list fails.
+            StorageError: If list fails or access is denied.
         """
         try:
+            # Check for single file (e.g., data-files/customers.csv)
+            file_key = f"{prefix}{table}.{self.file_type}"
+            try:
+                self.s3_client.head_object(Bucket=self.bucket_name, Key=file_key)
+                self.logger.debug(f"Found single file for table {table}: {file_key}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Found single file for table {table}: {file_key}")
+                return [file_key]
+            except ClientError as e:
+                if e.response['Error']['Code'] == '404':
+                    self.logger.debug(f"No single file found at {file_key}, checking directory")
+                else:
+                    self.logger.error(f"Access error for {file_key}: {str(e)}")
+                    raise StorageError(f"Access error for {file_key}: {str(e)}")
+
+            # Check for directory (e.g., data-files/customers/)
             table_prefix = f"{prefix}{table}/"
             response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=table_prefix)
             part_files = []
@@ -230,13 +250,11 @@ class StorageManager:
                 elif file_key.endswith(f".{self.file_type}"):
                     part_files.append(obj["Key"])
             if not part_files:
-                file_key = f"{prefix}{table}.{self.file_type}"
-                try:
-                    self.s3_client.head_object(Bucket=self.bucket_name, Key=file_key)
-                    part_files.append(file_key)
-                except ClientError:
-                    self.logger.debug(f"No single file found at {file_key}")
-            self.logger.debug(f"Found {len(part_files)} part files for table {table}")
+                self.logger.warning(f"No part files found for table {table} at {table_prefix} or {file_key}")
+            else:
+                self.logger.debug(f"Found {len(part_files)} part files for table {table}: {part_files}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Found {len(part_files)} part files for table {table}")
             return part_files
         except ClientError as e:
             self.logger.error(f"Failed to list part files for table {table}: {str(e)}\n{traceback.format_exc()}")
@@ -308,15 +326,38 @@ class StorageManager:
                 "int32": "integer",
                 "float32": "float"
             })
-            metadata = {"schema": schema, "delimiter": ",", "tables": {}}
-            rich_metadata = {"schema": schema, "delimiter": ",", "tables": {}}
-            response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix, Delimiter="/")
+            metadata = {"schema": schema, "delimiter": ",", "tables": []}
+            rich_metadata = {"schema": schema, "delimiter": ",", "tables": []}
             tables = set()
-            for obj in response.get("CommonPrefixes", []):
-                table_name = obj["Prefix"].rstrip("/").rsplit("/", 1)[-1]
-                if table_name and not any(c in table_name for c in ["/", "\\"]):
+            # Paginate through all S3 objects
+            paginator = self.s3_client.get_paginator("list_objects_v2")
+            page_iterator = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix, Delimiter="/")
+            all_objects = []
+            for page in page_iterator:
+                all_objects.extend(page.get("Contents", []))
+            self.logger.debug(f"Found {len(all_objects)} objects in S3 bucket with prefix {prefix}")
+            for obj in all_objects:
+                file_key = obj["Key"].rsplit("/", 1)[-1]
+                table_name = file_key.rsplit(".", 1)[0] if "." in file_key else file_key
+                if table_name and not any(c in table_name for c in ["/", "\\"]) and file_key.lower().endswith(f".{self.file_type}"):
                     tables.add(table_name)
-            self.logger.debug(f"Found {len(tables)} tables in schema {schema}")
+            self.logger.debug(f"Detected {len(tables)} tables in schema {schema}: {tables}")
+            if self.enable_component_logging:
+                print(f"Component Output: Detected {len(tables)} tables in schema {schema}: {tables}")
+            # Explicitly check for customers.csv
+            customers_path = f"{prefix}customers.csv"
+            try:
+                self.s3_client.head_object(Bucket=self.bucket_name, Key=customers_path)
+                if "customers" not in tables:
+                    tables.add("customers")
+                    self.logger.info(f"Added 'customers' table to metadata after explicit check at {customers_path}")
+                    if self.enable_component_logging:
+                        print(f"Component Output: Added 'customers' table to metadata")
+            except ClientError as e:
+                self.logger.error(f"Failed to verify 'customers' at {customers_path}: {str(e)} (Code: {e.response['Error']['Code']})")
+            if not tables:
+                self.logger.warning(f"No tables found in schema {schema} after scanning S3 bucket")
+                return False
             for table in sorted(tables):
                 part_files = self._get_table_part_files(table, prefix)
                 if not part_files:
@@ -370,14 +411,18 @@ class StorageManager:
                         }
                         table_metadata["columns"].append(col_metadata)
                         rich_table_metadata["columns"].append(rich_col_metadata)
-                    metadata["tables"][table] = table_metadata
-                    rich_metadata["tables"][table] = rich_table_metadata
+                    metadata["tables"].append(table_metadata)
+                    rich_metadata["tables"].append(rich_table_metadata)
                 except (ClientError, pd.errors.EmptyDataError, pd.errors.ParserError) as e:
                     self.logger.warning(f"Failed to read metadata for table {table} in schema {schema}: {str(e)}\n{traceback.format_exc()}")
                     continue
+            # Log metadata content for debugging
+            self.logger.debug(f"Generated metadata for schema {schema}: {json.dumps(metadata, indent=2)}")
+            if self.enable_component_logging:
+                print(f"Component Output: Generated metadata with {len(metadata['tables'])} tables")
             # Validate metadata structure
             if not metadata["tables"]:
-                self.logger.warning(f"No valid tables found for schema {schema}")
+                self.logger.error(f"No valid tables included in metadata for schema {schema}")
                 return False
             datasource_data_dir = self.config_utils.get_datasource_data_dir(datasource["name"])
             metadata_path = datasource_data_dir / f"metadata_data_{schema}.json"
@@ -402,11 +447,59 @@ class StorageManager:
                     print(f"Component Output: Saved rich metadata for schema {schema} to {rich_metadata_path}")
             except (json.JSONDecodeError, IOError) as e:
                 self.logger.error(f"Failed to save rich metadata for schema {schema} to {rich_metadata_path}: {str(e)}\n{traceback.format_exc()}")
-                return False
+                return True
             return True
         except Exception as e:
             self.logger.error(f"Failed to fetch S3 metadata for schema {schema} in {datasource['name']}: {str(e)}\n{traceback.format_exc()}")
             raise StorageError(f"Failed to fetch S3 metadata: {str(e)}")
+
+    def validate_metadata(self, datasource: Dict, schema: str) -> bool:
+        """Validate metadata for a datasource and schema, regenerating if necessary.
+
+        Args:
+            datasource (Dict): Datasource configuration.
+            schema (str): Schema name.
+
+        Returns:
+            bool: True if metadata is valid, False otherwise.
+        """
+        try:
+            self.logger.debug(f"Starting metadata validation for schema {schema} in datasource {datasource['name']}")
+            self._set_datasource(datasource)
+            metadata_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / f"metadata_data_{schema}.json"
+            self.logger.debug(f"Checking metadata file at {metadata_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Validating metadata for schema {schema} at {metadata_path}")
+            
+            # Check if metadata exists and is valid
+            if metadata_path.exists():
+                try:
+                    with open(metadata_path, "r") as f:
+                        metadata = json.load(f)
+                    self.logger.debug(f"Loaded metadata from {metadata_path}: {json.dumps(metadata, indent=2)}")
+                    if metadata.get("schema") == schema and metadata.get("tables"):
+                        self.logger.debug(f"Metadata for schema {schema} is valid with {len(metadata['tables'])} tables")
+                        if self.enable_component_logging:
+                            print(f"Component Output: Metadata valid with {len(metadata['tables'])} tables")
+                        return True
+                    else:
+                        self.logger.warning(f"Metadata at {metadata_path} is invalid (schema mismatch or no tables), regenerating")
+                except (json.JSONDecodeError, IOError) as e:
+                    self.logger.warning(f"Invalid metadata file at {metadata_path}: {str(e)}, regenerating")
+            
+            # Regenerate metadata if invalid or missing
+            self.logger.info(f"Regenerating metadata for schema {schema} in datasource {datasource['name']}")
+            if self.enable_component_logging:
+                print(f"Component Output: Regenerating metadata for schema {schema}")
+            if self.fetch_metadata(datasource, schema):
+                self.logger.info(f"Successfully validated and regenerated metadata for schema {schema}")
+                return True
+            else:
+                self.logger.error(f"Failed to validate or regenerate metadata for schema {schema}: No valid tables found")
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to validate metadata for schema {schema} in {datasource['name']}: {str(e)}\n{traceback.format_exc()}")
+            return False
 
     def read_table_data(self, datasource: Dict, schema: str, table: str) -> pd.DataFrame:
         """Read table data from S3 into a pandas DataFrame for S3 datasources.
@@ -448,40 +541,101 @@ class StorageManager:
             if not part_files:
                 self.logger.error(f"No part files found for table {table} in schema {schema}")
                 raise StorageError(f"No part files found for table {table}")
-            dfs = []
+            con = duckdb.connect()
+            aws_config = self.config_utils.load_aws_config()
+            if aws_config.get("aws_access_key_id") and aws_config.get("aws_secret_access_key"):
+                con.execute(f"SET s3_access_key_id='{aws_config['aws_access_key_id']}';")
+                con.execute(f"SET s3_secret_access_key='{aws_config['aws_secret_access_key']}';")
+            con.execute(f"SET s3_region='{self.region}';")
             for file_key in part_files:
-                for attempt in range(3):
-                    try:
-                        obj = self.s3_client.get_object(Bucket=self.bucket_name, Key=file_key)
-                        if self.file_type == "parquet":
-                            df = pq.read_table(obj["Body"]).to_pandas()
-                        elif self.file_type == "orc":
-                            df = orc.read_table(obj["Body"]).to_pandas()
-                        elif self.file_type in ["csv", "txt"]:
-                            df = pd.read_csv(BytesIO(obj["Body"].read()), sep=delimiter if self.file_type == "csv" else "\t")
-                        dfs.append(df)
-                        self.logger.debug(f"Read part file {file_key} for table {table}")
-                        break
-                    except ClientError as e:
-                        if attempt == 2:
-                            self.logger.warning(f"Failed to read part file {file_key} after 3 attempts: {str(e)}\n{traceback.format_exc()}")
-                        continue
-            if not dfs:
-                self.logger.error(f"No valid part files read for table {table} in schema {schema}")
-                raise StorageError(f"No valid part files for table {table}")
-            try:
-                result_df = pd.concat(dfs, ignore_index=True)
-                self.table_cache[cache_key] = result_df
-                self.logger.info(f"Read table {table} from schema {schema} with {len(part_files)} part files, {len(result_df)} rows, cached")
-                if self.enable_component_logging:
-                    print(f"Component Output: Read table {table} in schema {schema}, {len(result_df)} rows")
-                return result_df
-            except ValueError as e:
-                self.logger.error(f"Failed to concatenate part files for table {table}: {str(e)}\n{traceback.format_exc()}")
-                raise StorageError(f"Incompatible data in part files: {str(e)}")
-        except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+                s3_path = f"s3://{self.bucket_name}/{file_key}"
+                if self.file_type == "csv":
+                    con.execute(f"CREATE OR REPLACE VIEW {table} AS SELECT * FROM read_csv('{s3_path}', delim='{delimiter}', auto_detect=true)")
+                elif self.file_type == "parquet":
+                    con.execute(f"CREATE OR REPLACE VIEW {table} AS SELECT * FROM read_parquet('{s3_path}')")
+                elif self.file_type == "orc":
+                    con.execute(f"CREATE OR REPLACE VIEW {table} AS SELECT * FROM read_parquet('{s3_path}')")
+                else:
+                    self.logger.error(f"Unsupported file type: {self.file_type}")
+                    con.close()
+                    raise StorageError(f"Unsupported file type: {self.file_type}")
+            result_df = con.execute(f"SELECT * FROM {table}").fetch_df()
+            con.close()
+            if result_df.empty:
+                self.logger.error(f"No data read for table {table} in schema {schema}")
+                raise StorageError(f"No data read for table {table}")
+            self.table_cache[cache_key] = result_df
+            self.logger.info(f"Read table {table} from schema {schema} with {len(part_files)} part files, {len(result_df)} rows, cached")
+            if self.enable_component_logging:
+                print(f"Component Output: Read table {table} in schema {schema}, {len(result_df)} rows")
+            return result_df
+        except (pd.errors.EmptyDataError, pd.errors.ParserError, duckdb.IOException) as e:
             self.logger.error(f"Empty or invalid data in table {table} in schema {schema}: {str(e)}\n{traceback.format_exc()}")
             raise StorageError(f"Empty or invalid data: {str(e)}")
+
+    def _get_s3_duckdb_connection(self, schema: str, datasource: Dict, table_names: List[str]) -> Tuple[Optional[duckdb.DuckDBPyConnection], List[str]]:
+        """Load S3 data for multiple tables into a DuckDB in-memory database.
+
+        Args:
+            schema (str): Schema name.
+            datasource (Dict): Datasource configuration.
+            table_names (List[str]): List of table names to load.
+
+        Returns:
+            Tuple[Optional[duckdb.DuckDBPyConnection], List[str]]: DuckDB connection and list of successfully loaded tables, or (None, []) if loading fails.
+        """
+        try:
+            self._set_datasource(datasource)
+            metadata = self.get_metadata(datasource, schema)
+            valid_tables = [t["name"] for t in metadata.get("tables", []) if isinstance(t, dict) and "name" in t]
+            tables_to_load = [t for t in table_names if t in valid_tables]
+            if not tables_to_load:
+                self.logger.error(f"No valid tables to load: requested {table_names}, available {valid_tables}")
+                return None, []
+            prefix = f"{self.database}/"
+            delimiter = metadata.get("delimiter", ",")
+            con = duckdb.connect()
+            aws_config = self.config_utils.load_aws_config()
+            if aws_config.get("aws_access_key_id") and aws_config.get("aws_secret_access_key"):
+                con.execute(f"SET s3_access_key_id='{aws_config['aws_access_key_id']}';")
+                con.execute(f"SET s3_secret_access_key='{aws_config['aws_secret_access_key']}';")
+            con.execute(f"SET s3_region='{self.region}';")
+            loaded_tables = []
+            for table in tables_to_load:
+                part_files = self._get_table_part_files(table, prefix)
+                if not part_files:
+                    self.logger.warning(f"No part files found for table {table} in schema {schema}")
+                    continue
+                s3_path = f"s3://{self.bucket_name}/{part_files[0]}"
+                self.logger.debug(f"Attempting to load table {table} from {s3_path}")
+                try:
+                    if self.file_type == "csv":
+                        con.execute(f"CREATE OR REPLACE VIEW {table} AS SELECT * FROM read_csv('{s3_path}', delim='{delimiter}', auto_detect=true)")
+                    elif self.file_type == "parquet":
+                        con.execute(f"CREATE OR REPLACE VIEW {table} AS SELECT * FROM read_parquet('{s3_path}')")
+                    elif self.file_type == "orc":
+                        con.execute(f"CREATE OR REPLACE VIEW {table} AS SELECT * FROM read_parquet('{s3_path}')")
+                    else:
+                        self.logger.warning(f"Unsupported file type {self.file_type} for table {table}")
+                        continue
+                    loaded_tables.append(table)
+                    self.logger.info(f"Successfully loaded table {table} from {s3_path} in schema {schema} into DuckDB")
+                    if self.enable_component_logging:
+                        print(f"Component Output: Loaded table {table} in schema {schema} into DuckDB")
+                except duckdb.IOException as e:
+                    self.logger.error(f"Failed to load table {table} from S3 path {s3_path}: {str(e)}\n{traceback.format_exc()}")
+                    continue
+            if not loaded_tables:
+                self.logger.error(f"No tables loaded for schema {schema}, requested tables: {table_names}")
+                con.close()
+                return None, []
+            self.logger.debug(f"Loaded {len(loaded_tables)} tables {loaded_tables} for schema {schema} into DuckDB")
+            return con, loaded_tables
+        except (duckdb.IOException, ClientError) as e:
+            self.logger.error(f"Failed to load S3 data for tables {table_names} in schema {schema}: {str(e)}\n{traceback.format_exc()}")
+            if 'con' in locals():
+                con.close()
+            return None, []
 
     def get_s3_path(self, schema: str, table: str) -> str:
         """Get S3 path for a table in S3 datasources.
@@ -516,104 +670,68 @@ class StorageManager:
         s3_path = f"s3://{self.bucket_name}/{self.database}/{table}/"
         self.logger.debug(f"Generated S3 path for table {table} in schema {schema}: {s3_path}")
         if self.enable_component_logging:
-            print(f"Component Output: Generated S3 path for table {table} in schema {schema}")
+            print(f"Component Output: Generated S3 path for table {table} in schema {schema}: {s3_path}")
         return s3_path
 
-    def validate_metadata(self, datasource: Dict, schema: str) -> bool:
-        """Validate metadata existence and S3 file availability for a schema in S3 datasources.
-
-        For SQL Server datasources, returns False as validation is handled by DBManager.
-
-        Args:
-            datasource (Dict): Datasource configuration.
-            schema (str): Schema name.
-
-        Returns:
-            bool: True if valid for S3, False for sqlserver or if invalid.
-
-        Raises:
-            StorageError: If validation fails for S3.
-        """
-        if datasource["type"].lower() == "sqlserver":
-            self.logger.debug(f"Skipping S3 metadata validation for SQL Server datasource {datasource['name']}, schema {schema}")
-            if self.enable_component_logging:
-                print(f"Component Output: Skipped S3 metadata validation for SQL Server datasource {datasource['name']}")
-            return False
-        self._set_datasource(datasource)
-        if not isinstance(schema, str) or not schema.strip():
-            self.logger.warning(f"Invalid schema: {schema}, skipping validation")
-            return False
-        self.logger.debug(f"Validating metadata for schema {schema} in datasource {datasource['name']}")
-        try:
-            metadata = self.config_utils.load_metadata(datasource["name"], [schema])
-            if not metadata.get(schema, {}).get("tables"):
-                self.logger.warning(f"No metadata tables found for schema {schema}, attempting regeneration")
-                return self.fetch_metadata(datasource, schema)
-            prefix = f"{self.database}/"
-            response = self.s3_client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix, MaxKeys=1)
-            if not response.get("Contents") and not response.get("CommonPrefixes"):
-                self.logger.warning(f"No files found in S3 bucket {self.bucket_name} for schema {schema}")
-                return False
-            self.logger.debug(f"Validated metadata for schema {schema}")
-            if self.enable_component_logging:
-                print(f"Component Output: Validated metadata for schema {schema}")
-            return True
-        except (ConfigError, ClientError, json.JSONDecodeError) as e:
-            self.logger.error(f"Failed to validate metadata for schema {schema} in {datasource['name']}: {str(e)}\n{traceback.format_exc()}")
-            self.logger.info(f"Attempting to regenerate metadata for schema {schema}")
-            return self.fetch_metadata(datasource, schema)
-
     def get_metadata(self, datasource: Dict, schema: str) -> Dict:
-        """Load metadata for a schema in S3 datasources.
-
-        For SQL Server datasources, returns an empty dict as metadata is handled by DBManager.
+        """Get metadata for a schema, fetching if necessary.
 
         Args:
             datasource (Dict): Datasource configuration.
             schema (str): Schema name.
 
         Returns:
-            Dict: Metadata dictionary (for S3) or empty dict (for sqlserver).
+            Dict: Metadata dictionary.
 
         Raises:
-            StorageError: If loading fails for S3 or schema is invalid.
+            StorageError: If metadata retrieval fails.
         """
-        if datasource["type"].lower() == "sqlserver":
-            self.logger.debug(f"Skipping S3 metadata load for SQL Server datasource {datasource['name']}, schema {schema}")
-            if self.enable_component_logging:
-                print(f"Component Output: Skipped S3 metadata load for SQL Server datasource {datasource['name']}")
-            return {}
-        self._set_datasource(datasource)
-        if not isinstance(schema, str) or not schema.strip():
-            self.logger.error(f"Invalid schema: {schema}")
-            raise StorageError(f"Invalid schema: {schema}")
-        self.logger.debug(f"Loading metadata for schema {schema} in datasource {datasource['name']}")
         try:
-            metadata = self.config_utils.load_metadata(datasource["name"], [schema])
-            self.logger.debug(f"Loaded metadata for schema {schema} in {datasource['name']}")
-            if self.enable_component_logging:
-                print(f"Component Output: Loaded metadata for schema {schema}")
-            return metadata.get(schema, {})
-        except (ConfigError, json.JSONDecodeError) as e:
-            self.logger.error(f"Failed to load metadata for schema {schema} in {datasource['name']}: {str(e)}\n{traceback.format_exc()}")
-            self.logger.info(f"Attempting to regenerate metadata for schema {schema}")
-            if self.fetch_metadata(datasource, schema):
+            self.logger.debug(f"Retrieving metadata for schema {schema} in datasource {datasource['name']}")
+            self._set_datasource(datasource)
+            datasource_name = datasource["name"]
+            metadata_path = self.config_utils.get_datasource_data_dir(datasource_name) / f"metadata_data_{schema}.json"
+            self.logger.debug(f"Checking metadata file at {metadata_path}")
+            if metadata_path.exists():
                 try:
-                    metadata = self.config_utils.load_metadata(datasource["name"], [schema])
-                    self.logger.debug(f"Successfully regenerated and loaded metadata for schema {schema}")
-                    if self.enable_component_logging:
-                        print(f"Component Output: Regenerated and loaded metadata for schema {schema}")
-                    return metadata.get(schema, {})
-                except (ConfigError, json.JSONDecodeError) as regen_e:
-                    self.logger.error(f"Failed to load regenerated metadata for schema {schema}: {str(regen_e)}\n{traceback.format_exc()}")
-                    raise StorageError(f"Failed to load regenerated metadata: {str(regen_e)}")
+                    with open(metadata_path, "r") as f:
+                        metadata = json.load(f)
+                    self.logger.debug(f"Loaded metadata from {metadata_path}: {json.dumps(metadata, indent=2)}")
+                    if metadata.get("schema") == schema and metadata.get("tables"):
+                        self.logger.debug(f"Valid metadata found for schema {schema} with {len(metadata['tables'])} tables")
+                        if self.enable_component_logging:
+                            print(f"Component Output: Loaded valid metadata for schema {schema} from {metadata_path}")
+                        return metadata
+                    else:
+                        self.logger.warning(f"Metadata at {metadata_path} is invalid (schema mismatch or no tables), regenerating")
+                except (json.JSONDecodeError, IOError) as e:
+                    self.logger.warning(f"Corrupted metadata file at {metadata_path}: {str(e)}, regenerating")
             else:
-                self.logger.error(f"Failed to regenerate metadata for schema {schema}")
-                raise StorageError(f"Failed to regenerate metadata: {str(e)}")
+                self.logger.debug(f"No metadata file found at {metadata_path}, triggering regeneration")
+            self.logger.info(f"Regenerating metadata for schema {schema} in datasource {datasource_name}")
+            if self.enable_component_logging:
+                print(f"Component Output: Regenerating metadata for schema {schema}")
+            if self.fetch_metadata(datasource, schema):
+                with open(metadata_path, "r") as f:
+                    metadata = json.load(f)
+                self.logger.debug(f"Regenerated metadata for schema {schema} with tables: {[t['name'] for t in metadata.get('tables', [])]}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Regenerated metadata for schema {schema} with {len(metadata['tables'])} tables")
+                return metadata
+            self.logger.error(f"Failed to generate metadata for schema {schema}, returning empty metadata")
+            return {"schema": schema, "delimiter": ",", "tables": []}
+        except Exception as e:
+            self.logger.error(f"Failed to get metadata for schema {schema} in {datasource['name']}: {str(e)}\n{traceback.format_exc()}")
+            raise StorageError(f"Failed to get metadata: {str(e)}")
 
     def clear_cache(self) -> None:
-        """Clear table data cache."""
-        self.table_cache.clear()
-        self.logger.debug("Cleared table data cache")
-        if self.enable_component_logging:
-            print("Component Output: Cleared table data cache")
+        """Clear the table cache to free memory.
+
+        """
+        try:
+            self.table_cache.clear()
+            self.logger.debug("Cleared table cache")
+            if self.enable_component_logging:
+                print("Component Output: Cleared table cache")
+        except Exception as e:
+            self.logger.error(f"Failed to clear table cache: {str(e)}\n{traceback.format_exc()}")

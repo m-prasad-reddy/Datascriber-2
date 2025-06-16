@@ -300,6 +300,9 @@ class TableIdentifier:
         """
         self.logger.debug(f"Identifying tables for NLQ '{nlq}' with schemas {schemas}")
         try:
+            if not nlq or not nlq.strip():
+                self.logger.warning(f"Empty or invalid NLQ provided: '{nlq}'")
+                raise TIAError("Empty or invalid NLQ")
             if not schemas:
                 self.logger.error(f"No schemas provided for NLQ: {nlq}")
                 raise TIAError("No schemas provided")
@@ -415,7 +418,11 @@ class TableIdentifier:
             tokens = nlp_result.get("tokens", [])
             extracted_values = nlp_result.get("extracted_values", {})
             entities = nlp_result.get("entities", {})
-            primary_entity = entities.get("objects", [None])[0]  # e.g., 'customers'
+            primary_entity = None
+            if entities.get("objects"):
+                primary_entity = entities["objects"][0]
+            else:
+                self.logger.debug(f"No objects extracted for NLQ '{nlq}', primary_entity set to None")
             metadata = self._get_metadata(schemas)
             synonyms = {schema: self._load_synonyms(schema) for schema in schemas}
             result = {
@@ -491,10 +498,14 @@ class TableIdentifier:
                                     table_scores[full_table] = table_scores.get(full_table, 0.0) + (col_score * 0.5)
                             if "unique_values" in column:
                                 for value in column["unique_values"]:
-                                    if token.lower() == value.lower():
-                                        result["extracted_values"][f"{table_name}.{col_name}"] = value
-                                        if "?" not in result["placeholders"]:
-                                            result["placeholders"].append("?")
+                                    try:
+                                        if token.lower() == str(value).lower():
+                                            result["extracted_values"][f"{table_name}.{col_name}"] = value
+                                            if "?" not in result["placeholders"]:
+                                                result["placeholders"].append("?")
+                                    except Exception as e:
+                                        self.logger.debug(f"Failed to compare token '{token}' with value '{value}' in column {table_name}.{col_name}: {str(e)}")
+                                        continue
             self.logger.debug(f"Token mappings for NLQ '{nlq}': {'; '.join(token_mappings)}")
             # Select top tables
             selected_tables = []

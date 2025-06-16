@@ -177,35 +177,43 @@ class Orchestrator:
                 if not isinstance(schema, str) or not schema.strip():
                     self.logger.warning(f"Skipping invalid schema: {schema}")
                     continue
+                metadata_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / f"metadata_data_{schema}.json"
                 metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
-                if not metadata.get("tables"):
-                    self.logger.warning(f"No tables found in metadata for schema {schema}")
+                if metadata_path.exists() and metadata.get("tables"):
+                    self.logger.debug(f"Metadata valid for schema {schema} with {len(metadata['tables'])} tables")
+                    valid_schemas.append(schema)
                     continue
-                valid_schemas.append(schema)
+                self.logger.debug(f"No valid metadata found for schema {schema} at {metadata_path}, attempting regeneration")
+                if self.enable_component_logging:
+                    print(f"Component Output: Regenerating metadata for schema {schema} in datasource {datasource['name']}")
+                if datasource["type"] == "sqlserver":
+                    if self.db_manager.validate_metadata(datasource, schema):
+                        valid_schemas.append(schema)
+                    elif self.user == "admin":
+                        self.db_manager.fetch_metadata(datasource, schema)
+                        if self.db_manager.validate_metadata(datasource, schema):
+                            valid_schemas.append(schema)
+                    else:
+                        self.logger.warning(f"Metadata regeneration skipped for schema {schema} (SQL Server, non-admin user)")
+                elif datasource["type"] == "s3":
+                    if self.storage_manager.validate_metadata(datasource, schema):
+                        new_metadata = self.storage_manager.get_metadata(datasource, schema)
+                        if new_metadata.get("tables"):
+                            self.logger.debug(f"Regenerated metadata valid for schema {schema} with {len(new_metadata['tables'])} tables")
+                            valid_schemas.append(schema)
+                        else:
+                            self.logger.warning(f"No tables found in regenerated metadata for schema {schema}")
+                    else:
+                        self.logger.warning(f"Failed to regenerate metadata for schema {schema} (S3)")
+                else:
+                    self.logger.error(f"Unsupported datasource type: {datasource['type']}")
             if not valid_schemas:
                 self.logger.error("No valid schemas found for validation")
                 return False
-            valid = True
-            for schema in valid_schemas:
-                if datasource["type"] == "sqlserver":
-                    if not self.db_manager.validate_metadata(datasource, schema):
-                        if self.user == "admin":
-                            self.db_manager.fetch_metadata(datasource, schema)
-                            valid &= self.db_manager.validate_metadata(datasource, schema)
-                        else:
-                            valid = False
-                elif datasource["type"] == "s3":
-                    valid &= self.storage_manager.validate_metadata(datasource, schema)
-                else:
-                    self.logger.error(f"Unsupported datasource type: {datasource['type']}")
-                    valid = False
-                if not valid:
-                    self.logger.warning(f"Metadata validation failed for schema {schema}")
-                    return False
-            self.logger.debug(f"Metadata validation completed for schemas: {valid_schemas}")
+            self.logger.info(f"Metadata validation successful for schemas: {valid_schemas}")
             if self.enable_component_logging:
                 print(f"Component Output: Metadata validated for schemas {valid_schemas}")
-            return valid
+            return True
         except Exception as e:
             self.logger.error(f"Failed to validate metadata: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to validate metadata: {str(e)}")
