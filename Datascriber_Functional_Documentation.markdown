@@ -1,16 +1,24 @@
-# Datascriber 1.1 Functional Documentation
+# Datascriber 2.0 Functional Documentation
 
-This document provides a comprehensive overview of Datascriber 1.1, a Text-to-SQL system that converts natural language queries (NLQs) into SQL queries for SQL Server and S3 datasources. It covers functionality for Data User and Admin User roles, including architecture, data flow, workflows, and component details. Datascriber integrates with Azure Open AI (`gpt-4o`, `text-embedding-3-small`) for query generation and table identification, supports bulk training (up to 100 rows with `IS_SLM_TRAINED` flag), and aligns with TIA 1.2 for table mapping.
+This document provides a comprehensive overview of Datascriber 2.0, an enhanced Text-to-SQL system that converts natural language queries (NLQs) into SQL queries for SQL Server and S3 datasources. It includes new features like DuckDB integration for S3 query execution and improved date handling, alongside existing capabilities like Azure Open AI integration (`gpt-4o`, `text-embedding-3-small`), bulk training (up to 100 rows with `IS_SLM_TRAINED` flag), and TIA 1.2 for table mapping. New diagrams and module communication details are added for clarity, with detailed component descriptions preserved for technical teams.
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Architecture](#architecture)
+- [High-Level Architecture](#high-level-architecture)
+  - [High-Level Architecture Diagram](#high-level-architecture-diagram)
+- [Detailed Architecture](#detailed-architecture)
   - [Architecture Diagram](#architecture-diagram)
 - [Data Flow](#data-flow)
-  - [Data Flow Diagram](#data-flow-diagram)
+  - [Data User Data Flow Diagram](#data-user-data-flow-diagram)
+  - [Admin User Data Flow Diagram](#admin-user-data-flow-diagram)
 - [Workflow](#workflow)
-  - [Workflow Diagram](#workflow-diagram)
+  - [Data User Workflow Diagram](#data-user-workflow-diagram)
+  - [Admin User Workflow Diagram](#admin-user-workflow-diagram)
+- [Sequence Diagrams](#sequence-diagrams)
+  - [Data User Sequence Diagram](#data-user-sequence-diagram)
+  - [Admin User Sequence Diagram](#admin-user-sequence-diagram)
+- [Module Communication Flow](#module-communication-flow)
 - [Component-Level Details](#component-level-details)
   - [CLI (`cli/interface.py`)](#cli-interfacepy)
   - [Orchestrator (`core/orchestrator.py`)](#orchestrator-coreorchestratorpy)
@@ -27,22 +35,48 @@ This document provides a comprehensive overview of Datascriber 1.1, a Text-to-SQ
 
 ## Overview
 
-Datascriber 1.1 enables users to query SQL Server and S3 datasources using natural language, generating optimized SQL queries. It supports:
-- **Text-to-SQL Conversion**: Processes NLQs to produce SQL queries for SQL Server (`bikestores`) and S3 (`salesdata`) datasources.
-- **Table Identification**: Uses metadata-driven identification with TIA 1.2, searching all configured schemas without mandatory schema specification.
-- **Azure Open AI Integration**: Leverages `gpt-4o` for query generation and `text-embedding-3-small` for dynamic synonyms.
+Datascriber 2.0 enhances the Text-to-SQL system to process NLQs for SQL Server (`bikestores`) and S3 (`salesdata`) datasources with improved performance and reliability. Key enhancements include:
+- **DuckDB Integration**: Uses DuckDB for efficient S3 query execution, supporting CSV, Parquet, and ORC files.
+- **Improved Date Handling**: Automatically casts string-type date columns (e.g., `order_date`) to `DATE` for queries like “Show orders from 2016”.
+- **Text-to-SQL Conversion**: Converts NLQs to optimized SQL queries using Azure Open AI (`gpt-4o`).
+- **Table Identification**: Metadata-driven table mapping with TIA 1.2, searching all schemas dynamically.
 - **Bulk Training**: Stores up to 100 rows of training data in SQLite with `IS_SLM_TRAINED` flag.
-- **CLI Interface**: Provides interactive query input, error notifications, and rejected query management.
-- **Metadata Management**: Generates and stores metadata for datasources in JSON files.
+- **CLI Interface**: Interactive query input, error notifications, and rejected query management.
+- **Metadata Management**: Generates JSON metadata for datasources, stored in `data/<datasource>/`.
 - **User Roles**:
-  - **Data User**: Submits NLQs via CLI to retrieve data.
+  - **Data User**: Submits NLQs to retrieve data.
   - **Admin User**: Configures datasources, manages metadata, and reviews training/rejected queries.
 
-The system is designed for data analysts and administrators, offering robust logging, error handling, and scalability for multiple schemas.
+The system is designed for data analysts and administrators, offering robust logging, error handling, and scalability.
 
-## Architecture
+## High-Level Architecture
 
-Datascriber follows a modular architecture with components for user interaction, query processing, data access, and configuration management. The system integrates with external services (Azure Open AI, SQL Server, S3) and uses SQLite for internal data storage.
+Datascriber 2.0 follows a modular architecture, integrating user interfaces, query processing, data access, and external services (Azure Open AI, SQL Server, S3, DuckDB). The high-level view simplifies the system for leadership presentations.
+
+### High-Level Architecture Diagram
+
+```mermaid
+graph TD
+    A[User] -->|NLQ| B[CLI Interface]
+    B -->|Coordinates| C[Query Processing]
+    C -->|Generates SQL| D[Azure Open AI]
+    C -->|Executes SQL| E[Data Access]
+    E -->|Queries| F[SQL Server]
+    E -->|Queries via DuckDB| G[S3]
+    E -->|Stores| H[SQLite]
+    C -->|Logs| I[Log File]
+    C -->|Uses| J[Configuration & Metadata]
+```
+
+**Explanation**:
+- **User**: Interacts via CLI to submit NLQs.
+- **Query Processing**: Handles NLQ parsing, table identification, and SQL generation.
+- **Data Access**: Executes queries on SQL Server or S3 (using DuckDB) and stores training/rejected queries in SQLite.
+- **External Services**: Azure Open AI generates SQL; configuration and metadata guide operations.
+
+## Detailed Architecture
+
+The detailed architecture outlines component interactions, preserved for technical teams.
 
 ### Architecture Diagram
 
@@ -60,7 +94,7 @@ graph TD
     H -->|Queries Data| K[DB Manager: db_manager.py]
     H -->|Queries Data| L[Storage Manager: storage_manager.py]
     K -->|Accesses| M[SQL Server: bikestores]
-    L -->|Accesses| N[S3: salesdata]
+    L -->|Accesses via DuckDB| N[S3: salesdata]
     J -->|Loads Config| O[Configuration Files]
     J -->|Accesses Metadata| P[Metadata JSON]
     K -->|Stores Training/Rejected Queries| Q[SQLite: datascriber.db]
@@ -70,18 +104,18 @@ graph TD
 ```
 
 **Explanation**:
-- **User Interaction**: The CLI (`interface.py`) accepts NLQs and command arguments via `main.py`.
-- **Core Processing**: The `Orchestrator` coordinates NLP processing, table identification, prompt generation, and query execution.
-- **External Services**: Azure Open AI provides embeddings and query generation; SQL Server and S3 serve as data sources.
-- **Data Management**: `DB Manager` and `Storage Manager` handle SQL Server and S3 data access, respectively, with metadata stored in JSON files.
-- **Internal Storage**: SQLite (`datascriber.db`) stores training and rejected queries.
+- **User Interaction**: CLI accepts NLQs and passes them to `main.py`.
+- **Core Processing**: `Orchestrator` coordinates NLP, table identification, prompt generation, and query execution.
+- **External Services**: Azure Open AI provides embeddings and SQL generation; SQL Server and S3 (via DuckDB) serve data.
+- **Data Management**: `DB Manager` and `Storage Manager` handle data access, with metadata in JSON files.
+- **Internal Storage**: SQLite stores training and rejected queries.
 - **Configuration and Logging**: `Config Utils` loads configurations; `Logging Setup` manages logs.
 
 ## Data Flow
 
 Data flows from user input through processing components to datasources and back as results, with metadata and logs stored persistently.
 
-### Data Flow Diagram
+### Data User Data Flow Diagram
 
 ```mermaid
 graph LR
@@ -92,7 +126,7 @@ graph LR
     E -->|Prompt| F[Azure Open AI]
     F -->|SQL Query| G[Data Executor]
     G -->|Query| H[DB Manager]
-    G -->|Query| I[Storage Manager]
+    G -->|Query via DuckDB| I[Storage Manager]
     H -->|Results| J[SQL Server]
     I -->|Results| K[S3]
     J -->|Data| H
@@ -100,34 +134,59 @@ graph LR
     G -->|Results| B
     B -->|Output| A
     D -->|Accesses| L[Metadata JSON]
-    H -->|Stores| M[SQLite: Training/Rejected Queries]
+    G -->|Stores| M[SQLite: Training/Rejected Queries]
     C -->|Logs| N[Log File]
     E -->|Logs| N
     G -->|Logs| N
 ```
 
 **Explanation**:
-- **Input**: User submits NLQ via CLI.
-- **Processing**: NLP Processor extracts tokens/entities; Table Identifier uses metadata to select tables; Prompt Generator creates a prompt for Azure Open AI to generate SQL.
-- **Execution**: Data Executor runs the SQL query on SQL Server or S3 via DB Manager or Storage Manager.
-- **Output**: Results return to the user via CLI.
-- **Storage**: Metadata is read from JSON files; training/rejected queries are stored in SQLite; logs are written to `datascriber.log`.
+- **Input**: Data User submits NLQ via CLI.
+- **Processing**: NLP extracts tokens; Table Identifier selects tables; Prompt Generator creates a prompt for Azure Open AI to generate SQL.
+- **Execution**: Data Executor runs SQL on SQL Server or S3 (via DuckDB).
+- **Output**: Results are displayed in CLI.
+- **Storage**: Metadata is read from JSON; training/rejected queries are stored in SQLite; logs are written to `datascriber.log`.
+
+### Admin User Data Flow Diagram
+
+```mermaid
+graph LR
+    A[Admin User] -->|Task| B[CLI]
+    B -->|Metadata Request| C[Orchestrator]
+    C -->|Fetch Metadata| D[DB Manager]
+    C -->|Fetch Metadata| E[Storage Manager]
+    D -->|Metadata| F[SQL Server]
+    E -->|Metadata| G[S3]
+    F -->|Schema Data| D
+    G -->|File Data| E
+    D -->|Stores| H[Metadata JSON]
+    E -->|Stores| H
+    C -->|Stores Queries| I[SQLite: Training/Rejected Queries]
+    C -->|Logs| J[Log File]
+    B -->|Output| A
+```
+
+**Explanation**:
+- **Input**: Admin User triggers metadata generation or query review via CLI.
+- **Processing**: Orchestrator coordinates metadata fetching or query storage.
+- **Execution**: DB Manager and Storage Manager fetch metadata from SQL Server or S3.
+- **Output**: Metadata is stored in JSON; query data is stored in SQLite; logs are written.
 
 ## Workflow
 
-The workflow outlines the steps for processing an NLQ, from input to result output, including error handling and training data storage.
+Workflows outline the steps for processing NLQs and administrative tasks.
 
-### Workflow Diagram
+### Data User Workflow Diagram
 
 ```mermaid
 graph TD
-    A[Start: User Submits NLQ] --> B[CLI Accepts Input]
+    A[Start: Submit NLQ] --> B[CLI Accepts Input]
     B --> C{Valid Query?}
     C -->|No| D[Reject Query]
     D --> E[Store in rejected_queries]
     D --> F[Notify User]
     F --> G[End]
-    C -->|Yes| H[NLP Processor: Extract Tokens/Entities]
+    C -->|Yes| H[NLP Processor: Extract Tokens]
     H --> I[Table Identifier: Select Tables]
     I --> J[Prompt Generator: Create Prompt]
     J --> K[Azure Open AI: Generate SQL]
@@ -149,168 +208,335 @@ graph TD
 ```
 
 **Explanation**:
-- **Input Validation**: CLI checks if the NLQ is meaningful; invalid queries are rejected and logged.
-- **Query Processing**: Valid NLQs are tokenized, tables are identified, a prompt is generated, and Azure Open AI produces SQL.
-- **Execution**: The SQL query is executed; successful results are displayed, and training data is stored.
-- **Error Handling**: Invalid SQL or execution failures trigger rejection, notification, and logging.
+- **Validation**: CLI checks NLQ validity; invalid queries are rejected.
+- **Processing**: Valid NLQs are tokenized, tables identified, and SQL generated.
+- **Execution**: SQL is executed via DuckDB for S3 or directly for SQL Server.
+- **Output**: Results are displayed, and training data is stored.
+
+### Admin User Workflow Diagram
+
+```mermaid
+graph TD
+    A[Start: Admin Task] --> B[CLI Input]
+    B --> C{Task Type?}
+    C -->|Metadata Generation| D[Delete Existing Metadata]
+    D --> E[Submit Query]
+    E --> F[Orchestrator]
+    F --> G[DB Manager/Storage Manager]
+    G --> H[Generate Metadata]
+    H --> I[Store Metadata JSON]
+    C -->|Review Queries| J[Submit Invalid Query]
+    J --> K[Orchestrator]
+    K --> L[Store Rejected Query]
+    L --> M[SQLite: rejected_queries]
+    C -->|Training Data| N[Submit Valid Query]
+    N --> O[Orchestrator]
+    O --> P[Store Training Data]
+    P --> Q[SQLite: training_data]
+    I --> R[Log]
+    M --> R
+    Q --> R
+    R --> S[datascriber.log]
+    S --> T[End]
+```
+
+**Explanation**:
+- **Metadata Generation**: Admin deletes metadata and submits a query to regenerate it.
+- **Query Review**: Invalid queries are stored in `rejected_queries`.
+- **Training Data**: Valid queries trigger training data storage.
+
+## Sequence Diagrams
+
+### Data User Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as CLI
+    participant Orch as Orchestrator
+    participant NLP as NLP Processor
+    participant TIA as Table Identifier
+    participant PG as Prompt Generator
+    participant AI as Azure Open AI
+    participant DE as Data Executor
+    participant DM as DB Manager
+    participant SM as Storage Manager
+    participant SQL as SQL Server
+    participant S3 as S3 (DuckDB)
+    User->>CLI: Submit NLQ
+    CLI->>Orch: Process Query
+    Orch->>NLP: Extract Tokens/Entities
+    NLP->>AI: Generate Embeddings
+    AI-->>NLP: Embeddings
+    NLP-->>Orch: Tokens/Entities
+    Orch->>TIA: Identify Tables
+    TIA->>SM: Fetch Metadata
+    SM-->>TIA: Metadata
+    TIA-->>Orch: Tables
+    Orch->>PG: Generate Prompt
+    PG->>AI: Generate SQL
+    AI-->>PG: SQL Query
+    PG-->>Orch: SQL Query
+    Orch->>DE: Execute Query
+    alt SQL Server
+        DE->>DM: Run Query
+        DM->>SQL: Execute SQL
+        SQL-->>DM: Results
+        DM-->>DE: Results
+    else S3
+        DE->>SM: Run Query via DuckDB
+        SM->>S3: Execute SQL
+        S3-->>SM: Results
+        SM-->>DE: Results
+    end
+    DE->>SM: Store Training Data
+    SM->>SQLite: Save to training_data
+    DE-->>Orch: Results
+    Orch-->>CLI: Results
+    CLI-->>User: Display Results
+```
+
+**Explanation**:
+- **User submits NLQ** to CLI, which triggers Orchestrator.
+- **Processing**: NLP extracts tokens; TIA identifies tables; PG generates SQL via Azure Open AI.
+- **Execution**: DE runs SQL on SQL Server or S3 (via DuckDB).
+- **Output**: Results are returned and training data stored.
+
+### Admin User Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant CLI as CLI
+    participant Orch as Orchestrator
+    participant DM as DB Manager
+    participant SM as Storage Manager
+    participant SQL as SQL Server
+    participant S3 as S3
+    participant SQLite as SQLite
+    Admin->>CLI: Trigger Task
+    CLI->>Orch: Process Task
+    alt Metadata Generation
+        Orch->>DM: Fetch SQL Metadata
+        DM->>SQL: Query Schema
+        SQL-->>DM: Schema Data
+        DM-->>Orch: Metadata
+        Orch->>SM: Fetch S3 Metadata
+        SM->>S3: Scan Files
+        S3-->>SM: File Data
+        SM-->>Orch: Metadata
+        Orch->>SM: Store Metadata
+        SM->>Metadata: Save JSON
+    else Review Rejected Queries
+        Admin->>CLI: Submit Invalid Query
+        CLI->>Orch: Process Query
+        Orch->>SM: Store Rejected Query
+        SM->>SQLite: Save to rejected_queries
+    else Update Training Data
+        Admin->>CLI: Submit Valid Query
+        CLI->>Orch: Process Query
+        Orch->>SM: Store Training Data
+        SM->>SQLite: Save to training_data
+    end
+    Orch-->>CLI: Task Result
+    CLI-->>Admin: Display Result
+```
+
+**Explanation**:
+- **Metadata Generation**: Admin triggers metadata fetch, stored in JSON.
+- **Query Review**: Invalid queries are stored in SQLite.
+- **Training Data**: Valid queries trigger training data storage.
+
+## Module Communication Flow
+
+**Overview**: Modules interact through method calls and data passing, coordinated by the Orchestrator. Below is the communication flow for key operations:
+
+1. **NLQ Processing (Data User)**:
+   - **CLI → Main → Orchestrator**: CLI (`interface.py`) captures NLQ and passes it to `main.py`, which initializes components and calls `Orchestrator.process_query`.
+   - **Orchestrator → NLP Processor**: `Orchestrator` calls `NLPProcessor.process_query` to extract tokens and entities, using Azure Open AI embeddings (`text-embedding-3-small`).
+   - **Orchestrator → Table Identifier**: `Orchestrator` calls `TableIdentifier.identify_tables` with tokens and metadata (from `ConfigUtils`).
+   - **Orchestrator → Prompt Generator**: `Orchestrator` calls `PromptGenerator.generate_prompt` with tables and metadata, sending the prompt to Azure Open AI (`gpt-4o`) for SQL generation.
+   - **Orchestrator → Data Executor**: `Orchestrator` calls `DataExecutor.execute_query` with the SQL query, which delegates to `DBManager` (SQL Server) or `StorageManager` (S3 via DuckDB).
+   - **Data Executor → Storage Manager/DB Manager**: For S3, `DataExecutor` uses `StorageManager.get_s3_path` to fetch paths (e.g., `s3://bike-stores-bucket/data-files/<table>.csv`) and executes queries via DuckDB. For SQL Server, `DBManager.execute_query` runs SQL.
+   - **Storage Manager → SQLite**: `StorageManager.store_training_data` or `store_rejected_query` saves data to `datascriber.db`.
+   - **Data Executor → Orchestrator → CLI**: Results are returned as DataFrames, displayed via CLI.
+
+2. **Metadata Generation (Admin User)**:
+   - **CLI → Orchestrator → DB Manager/Storage Manager**: CLI triggers metadata generation via `Orchestrator`, which calls `DBManager.fetch_metadata` (SQL Server) or `StorageManager.fetch_metadata` (S3).
+   - **DB Manager → SQL Server**: Queries `INFORMATION_SCHEMA` for schema details.
+   - **Storage Manager → S3**: Scans bucket (e.g., `bike-stores-bucket`) for files, using `s3fs` and `pyarrow`.
+   - **Storage Manager → Metadata JSON**: Saves metadata to `data/<datasource>/metadata_data_*.json`.
+   - **Orchestrator → CLI**: Confirms metadata generation.
+
+3. **Error Handling**:
+   - **All Modules → Logging Setup**: Errors are logged via `LoggingSetup.get_logger` to `datascriber.log`.
+   - **CLI → User**: Errors trigger user notifications (e.g., “Please enter a meaningful query”).
+   - **Storage Manager → SQLite**: Rejected queries are stored in `rejected_queries`.
+
+4. **Configuration Access**:
+   - **All Modules → Config Utils**: `ConfigUtils.load_db_config`, `load_aws_config`, etc., provide configuration data from `app-config/`.
+   - **Config Utils → Modules**: Metadata is loaded via `ConfigUtils.load_metadata`.
+
+**Key Interactions**:
+- **Orchestrator** is the central coordinator, calling other modules sequentially.
+- **Config Utils** provides shared access to configurations and metadata.
+- **Storage Manager** and **DB Manager** handle datasource-specific operations.
+- **DuckDB** enhances S3 query execution, reducing memory usage compared to `pandas`.
+- **Azure Open AI** is accessed via `NLP Processor` and `Prompt Generator`.
 
 ## Component-Level Details
 
 ### CLI (`cli/interface.py`)
 - **Artifact ID**: `6156cb3f-d2c5-453d-8bb1-207c6903bf6c`
-- **Purpose**: Provides an interactive command-line interface for Data Users to submit NLQs and receive results.
+- **Purpose**: Interactive interface for NLQ submission and result display.
 - **Functionality**:
-  - Accepts command-line arguments (`--datasource`, `--schema` optional, `--debug`).
-  - Prompts for NLQs and displays SQL queries/results.
-  - Manages rejected queries with user notifications.
-  - Integrates with `Orchestrator` for query processing.
+  - Accepts `--datasource`, `--schema` (optional), `--debug`.
+  - Displays SQL queries and results.
+  - Manages rejected query notifications.
 - **Key Methods**:
-  - `run(datasource, schema)`: Starts CLI loop.
-  - `handle_rejected_query(query, reason)`: Notifies user and logs rejections.
+  - `run(datasource, schema)`: CLI loop.
+  - `handle_rejected_query(query, reason)`: User notifications.
 - **Dependencies**: `Orchestrator`, `Config Utils`, `Logging Setup`.
 - **User Scope**: Data User.
 
 ### Orchestrator (`core/orchestrator.py`)
 - **Artifact ID**: `3a2fb687-6893-43f1-9b6a-45fdd0b3db23`
-- **Purpose**: Coordinates query processing across components.
+- **Purpose**: Coordinates query processing.
 - **Functionality**:
-  - Integrates `NLP Processor`, `Table Identifier`, `Prompt Generator`, and `Data Executor`.
-  - Loads metadata for configured schemas if no schema is specified.
-  - Manages query lifecycle from NLQ to result.
+  - Integrates NLP, table identification, prompt generation, and query execution.
+  - Loads metadata for all schemas if `--schema` is omitted.
 - **Key Methods**:
-  - `process_query(query, datasource, schema)`: Orchestrates query processing.
+  - `process_query(query, datasource, schema)`: Manages query lifecycle.
   - `validate_results(results)`: Ensures result integrity.
 - **Dependencies**: `NLP Processor`, `Table Identifier`, `Prompt Generator`, `Data Executor`, `Config Utils`.
-- **User Scope**: Data User, Admin User (indirectly).
+- **User Scope**: Data User, Admin User.
 
 ### Table Identifier (`tia/table_identifier.py`)
 - **Artifact ID**: `862b1d15-dc91-47aa-b7e5-5ec57bfe91e3`
-- **Purpose**: Identifies relevant tables for an NLQ using metadata and TIA 1.2.
+- **Purpose**: Identifies tables for NLQs using TIA 1.2.
 - **Functionality**:
-  - Matches NLQ tokens to table/column names, synonyms, and unique values in metadata.
-  - Searches all schemas in `db_configurations.json` unless `--schema` is provided.
-  - Uses Azure Open AI embeddings (`text-embedding-3-small`) for similarity scoring.
+  - Matches tokens to table/column names, synonyms, and unique values.
+  - Searches all schemas unless `--schema` is specified.
+  - Uses Azure Open AI embeddings.
 - **Key Methods**:
-  - `identify_tables(query_tokens, metadata)`: Returns matching tables.
-  - `compute_similarity(token, metadata)`: Calculates embedding similarity.
+  - `identify_tables(query_tokens, metadata)`: Returns tables.
+  - `compute_similarity(token, metadata)`: Embedding similarity.
 - **Dependencies**: `NLP Processor`, `Config Utils`, Azure Open AI.
 - **User Scope**: Data User.
 
 ### Prompt Generator (`proga/prompt_generator.py`)
 - **Artifact ID**: `bcb70158-457d-4120-b23c-6e619551b98a`
-- **Purpose**: Creates prompts for Azure Open AI to generate SQL queries.
+- **Purpose**: Creates prompts for SQL generation.
 - **Functionality**:
-  - Constructs prompts with table metadata, query tokens, and validation rules (e.g., date formats).
-  - Ensures prompts are within `max_prompt_length` (from `llm_config.json`).
+  - Builds prompts with metadata, tokens, and date validation rules.
+  - Ensures prompts fit within `max_prompt_length`.
 - **Key Methods**:
-  - `generate_prompt(query, tables, metadata)`: Builds prompt string.
-  - `validate_prompt(prompt)`: Checks prompt length and content.
+  - `generate_prompt(query, tables, metadata)`: Prompt string.
+  - `validate_prompt(prompt)`: Checks length/content.
 - **Dependencies**: `Table Identifier`, `Config Utils`, `llm_config.json`.
 - **User Scope**: Data User.
 
 ### Data Executor (`opden/data_executor.py`)
-- **Artifact ID**: `01f0248a-c10f-47b6-b5d1-1d1b104f96e6`
-- **Purpose**: Executes SQL queries on SQL Server or S3 datasources.
+- **Artifact ID**: `f93cc85a-a9de-4ce7-97ae-d659e2fc38ab`
+- **Purpose**: Executes SQL queries on datasources.
 - **Functionality**:
-  - Validates SQL syntax before execution.
-  - Queries SQL Server via `DB Manager` or S3 via `Storage Manager`.
-  - Returns results as DataFrames.
+  - Validates SQL syntax.
+  - Uses DuckDB for S3 queries, casting string dates (e.g., `order_date`) to `DATE`.
+  - Queries SQL Server via `DB Manager`.
 - **Key Methods**:
-  - `execute_query(query, datasource, schema)`: Runs query and returns results.
-  - `validate_query(query)`: Checks query safety.
-- **Dependencies**: `DB Manager`, `Storage Manager`, `Config Utils`.
+  - `execute_query(query, datasource, schema)`: Runs query.
+  - `_adjust_sql_for_date_columns`: Casts date columns.
+  - `_get_s3_duckdb_connection`: Loads S3 data into DuckDB.
+- **Dependencies**: `DB Manager`, `Storage Manager`, `Config Utils`, `duckdb`, `s3fs`.
 - **User Scope**: Data User.
 
 ### NLP Processor (`nlp/nlp_processor.py`)
 - **Artifact ID**: `98644235-9805-4fab-b8c2-aee24f94e909`
-- **Purpose**: Processes NLQs to extract tokens, entities, and values.
+- **Purpose**: Extracts tokens, entities, and values from NLQs.
 - **Functionality**:
-  - Uses spaCy (`en_core_web_sm`) for tokenization and entity recognition.
-  - Applies Azure Open AI embeddings for dynamic synonym mapping.
-  - Validates entities (e.g., dates) per `llm_config.json`.
+  - Uses spaCy (`en_core_web_sm`) for tokenization.
+  - Applies Azure Open AI embeddings for synonyms.
+  - Validates entities per `llm_config.json`.
 - **Key Methods**:
-  - `process_query(query)`: Returns tokens, entities, and values.
+  - `process_query(query)`: Returns tokens/entities.
   - `generate_embeddings(text)`: Computes embeddings.
-- **Dependencies**: spaCy, Azure Open AI, `synonym_config.json`.
+- **Dependencies**: `spacy`, Azure Open AI, `synonym_config.json`.
 - **User Scope**: Data User.
 
 ### DB Manager (`storage/db_manager.py`)
 - **Artifact ID**: `a3aea774-2a68-47f7-abc4-fa2c2089cff5`
-- **Purpose**: Manages SQL Server data access and SQLite storage.
+- **Purpose**: Manages SQL Server and SQLite access.
 - **Functionality**:
-  - Fetches metadata from SQL Server (`INFORMATION_SCHEMA`).
+  - Fetches metadata from `INFORMATION_SCHEMA`.
   - Executes SQL queries on `bikestores`.
-  - Stores training data and rejected queries in `datascriber.db`.
-  - Supports bulk training (100 rows, `IS_SLM_TRAINED`).
+  - Stores training/rejected queries in `datascriber.db`.
 - **Key Methods**:
   - `fetch_metadata(datasource, schema)`: Generates metadata.
-  - `execute_query(query, datasource)`: Runs SQL query.
+  - `execute_query(query, datasource)`: Runs SQL.
   - `store_training_data(data)`: Saves training data.
 - **Dependencies**: `pyodbc`, SQLite, `Config Utils`.
 - **User Scope**: Data User, Admin User.
 
 ### Storage Manager (`storage/storage_manager.py`)
 - **Artifact ID**: `6f8b32dc-ad35-4a52-bd67-1ef213b8235c`
-- **Purpose**: Manages S3 data access and metadata.
+- **Purpose**: Manages S3 data and metadata.
 - **Functionality**:
-  - Fetches metadata from S3 bucket (`salesdata`) for CSV, Parquet, ORC files.
-  - Reads data into pandas DataFrames.
-  - Generates metadata (`metadata_data_default.json`).
+  - Fetches metadata from S3 (`bike-stores-bucket/data-files/`).
+  - Supports CSV, Parquet, ORC files via DuckDB.
+  - Generates `metadata_data_default.json`.
 - **Key Methods**:
-  - `fetch_metadata(datasource, schema)`: Scans S3 for metadata.
-  - `read_table_data(datasource, schema, table)`: Reads S3 data.
-  - `get_s3_path(schema, table)`: Returns S3 path.
-- **Dependencies**: `boto3`, `pyarrow`, `pandas`, `Config Utils`.
+  - `fetch_metadata(datasource, schema)`: Scans S3.
+  - `get_s3_path(table)`: Returns paths (e.g., `s3://bike-stores-bucket/data-files/<table>.csv`).
+- **Dependencies**: `boto3`, `pyarrow`, `pandas`, `s3fs`, `duckdb`, `Config Utils`.
 - **User Scope**: Data User, Admin User.
 
 ### Config Utilities (`config/utils.py`)
 - **Artifact ID**: `552166cb-0fd7-4b91-8267-7681f89c4a1e`
-- **Purpose**: Provides configuration and metadata loading utilities.
+- **Purpose**: Loads configurations and metadata.
 - **Functionality**:
-  - Loads configuration files (`db_configurations.json`, `llm_config.json`, etc.).
-  - Manages metadata access (`metadata_data_*.json`).
+  - Loads `db_configurations.json`, `llm_config.json`, etc.
+  - Manages metadata access.
 - **Key Methods**:
-  - `load_db_config()`: Loads datasource configurations.
+  - `load_db_config()`: Loads datasource configs.
   - `load_metadata(datasource, schema)`: Retrieves metadata.
-- **Dependencies**: None (core utility).
+- **Dependencies**: None.
 - **User Scope**: All components.
 
 ### Logging Setup (`config/logging_setup.py`)
 - **Artifact ID**: `817620a9-1f48-4018-86d6-36e45d2308bf`
-- **Purpose**: Configures system-wide logging.
+- **Purpose**: Configures logging.
 - **Functionality**:
-  - Sets up logging with debug/error levels to `datascriber.log`.
-  - Supports debug mode via `--debug` argument.
+  - Logs to `datascriber.log` with debug/error levels.
+  - Supports `--debug` mode.
 - **Key Methods**:
   - `get_instance(config_utils, debug)`: Initializes logger.
-  - `get_logger(name, type)`: Returns logger instance.
+  - `get_logger(name, type)`: Returns logger.
 - **Dependencies**: `Config Utils`.
 - **User Scope**: All components.
 
 ### Main Entry Point (`main.py`)
 - **Artifact ID**: `50242d5b-d690-4dd2-b7f9-da4742fa4dd7`
-- **Purpose**: Application entry point for launching Datascriber.
+- **Purpose**: Application entry point.
 - **Functionality**:
-  - Parses command-line arguments (`--datasource`, `--schema` optional, `--debug`, `--mode`).
-  - Initializes components and validates configurations.
-  - Launches CLI or (future) batch mode.
+  - Parses arguments (`--datasource`, `--schema`, `--debug`, `--mode`).
+  - Initializes components and validates configs.
 - **Key Methods**:
-  - `main()`: Parses arguments and starts application.
-  - `validate_config()`: Checks configuration files.
+  - `main()`: Starts application.
+  - `validate_config()`: Checks configs.
   - `cleanup_components()`: Closes resources.
-- **Dependencies**: All components, `argparse`, `pkg_resources`.
+- **Dependencies**: All components, `argparse`.
 - **User Scope**: Data User, Admin User.
 
 ### Configuration Files
 - **Files**:
-  - `db_configurations.json` (artifact ID `a9f8d7e5-de49-4551-bf98-534f3689adcc`): Defines `bikestores` (SQL Server) and `salesdata` (S3).
-  - `llm_config.json` (artifact ID `55be64f5-c6b8-43c0-86ac-37ef3f5b596d`): Configures Azure Open AI and validation rules.
-  - `model_config.json` (artifact ID `45bb8ad4-802e-4d04-8207-f10b10171980`): Sets training and type mapping.
-  - `azure_config.json` (artifact ID `c831ec89-23ff-426f-8b46-e72e58fc53e0`): Azure credentials.
-  - `aws_config.json` (artifact ID `549d460f-6499-41f1-bfcf-250486ec37ae`): AWS credentials.
-  - `synonym_config.json` (artifact ID `b9493716-495e-4458-9d5e-8f171304a952`): Synonym settings.
-- **Purpose**: Provide runtime configuration for datasources, models, and external services.
+  - `db_configurations.json` (artifact ID `a9f8d7e5-de49-4551-bf98-534f3689adcc`)
+  - `llm_config.json` (artifact ID `55be64f5-c6b8-43c0-86ac-37ef3f5b596d`)
+  - `model_config.json` (artifact ID `45bb8ad4-802e-4d04-8207-f10b10171980`)
+  - `azure_config.json` (artifact ID `c831ec89-23ff-426f-8b46-e72e58fc53e0`)
+  - `aws_config.json` (artifact ID `549d460f-6499-41f1-bfcf-250486ec37ae`)
+  - `synonym_config.json` (artifact ID `b9493716-495e-4458-9d5e-8f171304a952`)
+- **Purpose**: Provide runtime configuration.
 - **Functionality**:
-  - Loaded by `Config Utils` to initialize components.
-  - Support dynamic schema and table configuration.
-- **User Scope**: Admin User (configuration), all components (runtime).
+  - Loaded by `Config Utils`.
+  - Support dynamic schema/table configs.
+- **User Scope**: Admin User, all components.

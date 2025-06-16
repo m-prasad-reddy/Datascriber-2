@@ -1,10 +1,10 @@
-# Datascriber 1.1
+# Datascriber 2.0
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/m-prasad-reddy/Datascriber)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/m-prasad-reddy/Datascriber-2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-Datascriber is a Text-to-SQL system that converts natural language queries (NLQs) into SQL queries for SQL Server and S3 datasources. It leverages Azure Open AI (`gpt-4o`, `text-embedding-3-small`) for query processing, supports bulk training with up to 100 rows, and integrates with TIA 1.2 for table identification. The system provides a CLI interface, robust logging, and notification management, making it suitable for data analysts and developers.
+Datascriber 2.0 is an enhanced Text-to-SQL system that converts natural language queries (NLQs) into SQL queries for SQL Server and S3 datasources. It leverages Azure Open AI (`gpt-4o`, `text-embedding-3-small`), DuckDB for S3 query execution, and improved date handling for robust query processing. The system supports bulk training, TIA 1.2 integration, and a CLI interface for data analysts and developers.
 
 ## Table of Contents
 
@@ -20,58 +20,59 @@ Datascriber is a Text-to-SQL system that converts natural language queries (NLQs
 
 ## Features
 
-- **Text-to-SQL Conversion**: Processes NLQs to generate optimized SQL queries for SQL Server and S3 datasources.
-- **Azure Open AI Integration**: Uses `gpt-4o` for query generation and `text-embedding-3-small` for dynamic synonym handling.
-- **Multi-Datasource Support**: Handles SQL Server databases and S3 buckets with CSV, Parquet, ORC, and text files.
-- **Bulk Training**: Supports training with up to 100 rows, storing data in SQLite with `IS_SLM_TRAINED` flag.
-- **Dynamic Synonyms**: Maps query terms to schema elements using embeddings with configurable thresholds.
-- **CLI Interface**: Interactive command-line interface with datasource and schema selection.
-- **Notification System**: Manages rejected queries and errors with user notifications.
-- **TIA 1.2 Compatibility**: Integrates with Table Identification Agent for accurate table mapping.
+- **Text-to-SQL Conversion**: Generates optimized SQL from NLQs.
+- **DuckDB Integration**: Efficient S3 query execution for CSV, Parquet, ORC files.
+- **Improved Date Handling**: Casts string dates (e.g., `order_date`) to `DATE` for queries like “Show orders from 2016”.
+- **Azure Open AI Integration**: Uses `gpt-4o` for SQL generation and `text-embedding-3-small` for synonyms.
+- **Multi-Datasource Support**: SQL Server (`bikestores`) and S3 (`salesdata`).
+- **Bulk Training**: Stores up to 100 rows in SQLite with `IS_SLM_TRAINED`.
+- **Dynamic Synonyms**: Maps terms to schema using embeddings.
+- **CLI Interface**: Interactive query input with datasource/schema selection.
+- **TIA 1.2 Compatibility**: Accurate table mapping.
 
 ## Prerequisites
 
 - **Python**: 3.8 or higher
-- **Operating System**: Windows, Linux, or macOS
+- **OS**: Windows, Linux, or macOS
 - **Dependencies**:
-  - `spacy` (with `en_core_web_sm` model)
-  - `openai`, `numpy`, `pandas`, `pyodbc`, `boto3`, `pyarrow`
+  - `spacy`, `openai`, `numpy`, `pandas`, `pyodbc`, `boto3`, `pyarrow`, `duckdb`, `s3fs`
 - **Accounts**:
-  - Azure Open AI account with `gpt-4o` and `text-embedding-3-small` deployments
-  - AWS account with S3 access
+  - Azure Open AI with `gpt-4o` and `text-embedding-3-small`
+  - AWS with S3 access
 - **Database**:
-  - SQL Server instance (e.g., `bikestores` database)
-  - S3 bucket with data files (e.g., `bike-stores-s3-bucket`)
+  - SQL Server (`bikestores`)
+  - S3 bucket (`bike-stores-bucket`)
 
 ## Installation
 
-1. **Clone the Repository**:
+1. **Clone Repository**:
    ```bash
    git clone https://github.com/m-prasad-reddy/Datascriber-2.git
-   cd Datascriber
+   cd Datascriber-2
    ```
 
-2. **Create a Virtual Environment**:
+2. **Create Virtual Environment**:
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate  # Windows: venv\Scripts\activate
    ```
 
 3. **Install Dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
-
-   Create `requirements.txt` with:
+   Create `requirements.txt`:
    ```
-   spacy==3.7.2
-   openai==1.30.0
+   spacy==3.8.0
+   openai==1.86.0
    numpy==1.24.3
    pandas==2.0.3
    pyodbc==5.0.1
    boto3==1.34.0
-   pyarrow==14.0.1
+   pyarrow==17.0.0
    python-dotenv==1.0.0
+   duckdb==1.1.2
+   s3fs==2023.12.2
    ```
 
 4. **Download SpaCy Model**:
@@ -86,7 +87,7 @@ Datascriber is a Text-to-SQL system that converts natural language queries (NLQs
 
 ## Configuration
 
-Place the following configuration files in `app-config/` with valid credentials:
+Place configuration files in `app-config/` with credentials:
 
 - **`db_configurations.json`**:
   ```json
@@ -108,8 +109,8 @@ Place the following configuration files in `app-config/` with valid credentials:
         "name": "salesdata",
         "type": "s3",
         "connection": {
-          "bucket_name": "bike-stores-s3-bucket",
-          "database": "sales",
+          "bucket_name": "bike-stores-bucket",
+          "database": "data-files",
           "region": "us-east-1",
           "schemas": ["default"],
           "orc_pattern": "^data_"
@@ -119,218 +120,105 @@ Place the following configuration files in `app-config/` with valid credentials:
   }
   ```
 
-- **`llm_config.json`**:
-  ```json
-  {
-    "model_name": "gpt-4o",
-    "embedding_model": "text-embedding-3-small",
-    "api_version": "2023-10-01-preview",
-    "prompt_settings": {
-      "system_prompt": "You are a SQL expert generating valid SQL queries for SQL Server and S3 datasources. Use strftime for dates, LOWER() and LIKE for strings, SUM() and AVG() for numerics. Ensure queries are optimized and safe.",
-      "max_prompt_length": 4000,
-      "max_tokens": 1000,
-      "temperature": 0.1,
-      "validation": {
-        "enabled": true,
-        "date_formats": [
-          {"pattern": "\\d{4}-\\d{2}-\\d{2}", "strftime": "%Y-%m-%d"},
-          {"pattern": "\\d{2}/\\d{2}/\\d{4}", "strftime": "%m/%d/%Y"},
-          {"pattern": "\\d{2}-\\d{2}-\\d{4}", "strftime": "%d-%Y"}
-        ],
-        "error_message": "Invalid date format. Use YYYY-MM-DD, MM/DD/YYYY, or DD-MM-DDYYYY.",
-        "entities": ["dates", "objects", "places"]
-      }
-    },
-    "training_settings": {
-      "enabled": true,
-      "max_rows": 100,
-      "fields": [
-        "db_source_type",
-        "db_name",
-        "user_query",
-        "related_tables",
-        "specific_columns",
-        "extracted_values",
-        "placeholders",
-        "relevant_sql",
-        "is_slm_trained",
-        "scenario_id"
-      ]
-    },
-    "mock_enabled": true
-  }
-  ```
-
-- **`model_config.json`**:
-  ```json
-  {
-    "sentence_transformer": {
-      "model_name": "text-embedding-3-small",
-      "deployment": "embedding-model",
-      "enabled": true
-    },
-    "bulk_training": {
-      "enabled": true,
-      "max_rows": 100,
-      "is_slm_trained_field": "IS_SLM_TRAINED",
-      "scenario_id_field": "id"
-    },
-    "confidence_threshold": 0.7,
-    "type_mapping": {
-      "int64": "integer",
-      "float64": "float",
-      "object": "string",
-      "datetime64[ns]": "date",
-      "timestamp": "string",
-      "string": "string",
-      "int32": "integer",
-      "float32": "float"
-    }
-  }
-  ```
-
-- **`azure_config.json`**:
-  ```json
-  {
-    "endpoint": "https://your-resource-name.openai.azure.com/",
-    "api_key": "<your-api-key>",
-    "llm_api_version": "2023-10-01-preview",
-    "embedding_api_version": "2023-10-01-preview"
-  }
-  ```
-
-- **`aws_config.json`**:
-  ```json
-  {
-    "aws_access_key_id": "<your-access-key-id>",
-    "aws_secret_access_key": "<your-secret-key>"
-  }
-  ```
-
-- **`synonym_config.json`**:
-  ```json
-  {
-    "synonym_mode": "dynamic",
-    "dynamic_synonym_threshold": 0.6,
-    "custom_synonyms": {}
-  }
-  ```
-
-**Note**: Replace `<your-secure-password>`, `<your-api-key>`, `<your-access-key-id>`, and `<your-secret-access-key>` with actual credentials. Use environment variables or a secret manager for production.
+- **`llm_config.json`**, **`model_config.json`**, **`azure_config.json`**, **`aws_config.json`**, **`synonym_config.json`**: See `Integration_Instructions.md`.
 
 ## Usage
 
-Run the Datascriber CLI using `main.py`:
-
-```bash
-python main.py --datasource bikestores --schema sales --debug
-```
-
-Omit `--schema` to search all schemas configured in `db_configurations.json` for the datasource (e.g., `sales` and `production` for `bikestores`):
+Run CLI:
 
 ```bash
 python main.py --datasource bikestores --debug
 ```
 
-- **With `--schema`**: Limits table identification to the specified schema for faster queries.
-- **Without `--schema`**: Automatically identifies tables across all configured schemas, using metadata generated from `db_configurations.json`.
+Omit `--schema` to search all schemas:
+
+```bash
+python main.py --datasource salesdata --debug
+```
 
 ### Example Queries
 
-**Note**: Queries work with or without `--schema`, as table identification dynamically uses metadata for all configured schemas.
-
-1. **SQL Server (bikestores)**:
+1. **SQL Server**:
    ```bash
-   Enter your query: Show all orders from 2023-01-01
+   Enter your query: Show orders from 2016
    ```
    Output:
    ```sql
-   SELECT * FROM sales.orders WHERE order_date = '2023-01-01';
+   SELECT * FROM sales.orders WHERE YEAR(order_date) = 2016;
    ```
 
-2. **S3 (salesdata)**:
+2. **S3**:
    ```bash
-   Enter your query: List products with price above 100
+   Enter your query: Show orders from 2016
    ```
    Output:
    ```sql
-   SELECT * FROM products WHERE price > 100;
+   SELECT * FROM orders WHERE CAST(order_date AS DATE) LIKE '2016%';
    ```
 
-### Command-Line Options
+### Options
 
-- `--datasource`: Specify datasource (e.g., `bikestores`, `salesdata`).
-- `--schema`: Specify schema (e.g., `sales`, `default`) (optional).
-- `--debug`: Enable debug logging.
-- `--version`: Show version (1.1.0).
-- `--mode`: Run mode (`cli` or `batch`, batch not implemented).
+- `--datasource`: `bikestores`, `salesdata`
+- `--schema`: Optional
+- `--debug`: Enable debug logging
+- `--version`: Show version (2.0.0)
+- `--mode`: `cli` (batch not implemented)
 
-Logs are saved to `logs/datascriber.log`.
+Logs: `logs/datascriber.log`
 
 ## Project Structure
 
 ```
-Datascriber/
-├── app-config/              # Configuration files
+Datascriber-2/
+├── app-config/
 │   ├── db_configurations.json
 │   ├── llm_config.json
 │   ├── model_config.json
 │   ├── azure_config.json
 │   ├── aws_config.json
 │   ├── synonym_config.json
-├── cli/                     # CLI interface
+├── cli/
 │   ├── interface.py
-├── core/                    # Core orchestration
+├── core/
 │   ├── orchestrator.py
-├── tia/                     # Table Identification Agent
+├── tia/
 │   ├── table_identifier.py
-├── proga/                   # Prompt generation
+├── proga/
 │   ├── prompt_generator.py
-├── opden/                   # Data execution
+├── opden/
 │   ├── data_executor.py
-├── nlp/                     # NLP processing
+├── nlp/
 │   ├── nlp_processor.py
-├── storage/                 # Data storage management
+├── storage/
 │   ├── db_manager.py
 │   ├── storage_manager.py
-├── config/                  # Utilities
+├── config/
 │   ├── utils.py
 │   ├── logging_setup.py
-├── data/                    # Metadata and SQLite databases
+├── data/
 │   ├── bikestores/
 │   ├── salesdata/
-├── logs/                    # Log files
+├── logs/
 │   ├── datascriber.log
-├── main.py                  # Application entry point
-├── README.md                # Project documentation
-├── requirements.txt         # Dependencies
+├── main.py
+├── README.md
+├── requirements.txt
 ```
 
 ## Contributing
 
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature/your-feature`.
-3. Commit changes: `git commit -m "Add your feature"`.
-4. Push to branch: `git push origin feature/your-feature`.
-5. Open a pull request.
+1. Fork repository.
+2. Create branch: `git checkout -b feature/your-feature`.
+3. Commit: `git commit -m "Add feature"`.
+4. Push: `git push origin feature/your-feature`.
+5. Open pull request.
 
-Follow PEP 8 style guidelines and include tests for new features.
+Follow PEP 8 and include tests.
 
 ## Testing
 
-Tests are planned but not implemented. To contribute tests:
-
-1. Install `pytest`:
-   ```bash
-   pip install pytest
-   ```
-
-2. Create tests in `tests/` (e.g., `test_nlp_processor.py`).
-3. Run tests:
-   ```bash
-   pytest tests/
-   ```
+See `docs/Test_Scenarios.md` for manual test scenarios.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE).
