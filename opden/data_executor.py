@@ -117,7 +117,6 @@ class DataExecutor:
             self.logger.warning("SQL query is empty or not a string")
             return False
         sql_query = sql_query.strip()
-        # Simplified validation to allow basic SELECT queries
         if not re.match(r"^\s*SELECT\s+", sql_query, re.IGNORECASE):
             self.logger.warning(f"SQL query missing SELECT: {sql_query[:100]}...")
             return False
@@ -139,7 +138,6 @@ class DataExecutor:
             Set[str]: Set of table names referenced in the query.
         """
         try:
-            # Match table names after FROM or JOIN, ignoring subqueries and read_csv/read_parquet
             table_pattern = r"(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*\()"
             tables = set()
             for match in re.finditer(table_pattern, sql_query, re.IGNORECASE):
@@ -155,34 +153,62 @@ class DataExecutor:
             return set()
 
     def _is_date_like(self, value: str) -> bool:
-        """Check if a string value matches a common date format (e.g., YYYY-MM-DD, YYYY-MM, YYYY).
+        """Check if a string value matches a common date format (e.g., YYYY-MM-DD).
 
         Args:
             value (str): Value to check.
 
         Returns:
-            bool: True if the value is date-like, False otherwise.
+            bool: True if the value matches YYYY-MM-DD, False otherwise.
         """
         try:
-            # Match YYYY-MM-DD, YYYY-MM, or YYYY
-            date_pattern = r"^\d{4}(-\d{2}(-\d{2})?)?$"
+            date_pattern = r"^\d{4}-\d{2}-\d{2}$"
             return bool(re.match(date_pattern, value))
         except Exception:
             return False
 
-    def _adjust_sql_for_date_columns(self, sql_query: str, schema: str, datasource: Dict, tables: List[str]) -> str:
-        """Adjust SQL query to cast string-type date columns to DATE based on metadata.
+    def _validate_date_format(self, date_str: str) -> bool:
+        """Validate if a date string matches the required YYYY-MM-DD format.
+
+        Args:
+            date_str (str): Date string to validate.
+
+        Returns:
+            bool: True if valid, False otherwise.
+        """
+        if self._is_date_like(date_str):
+            try:
+                pd.to_datetime(date_str, format="%Y-%m-%d")
+                return True
+            except ValueError:
+                return False
+        return False
+
+    def _adjust_sql_for_date_columns(self, sql_query: str, schema: str, datasource: Dict, tables: List[str], entities: Optional[Dict] = None) -> str:
+        """Adjust SQL query to handle string-type date columns for DuckDB and validate date formats.
 
         Args:
             sql_query (str): Original SQL query.
             schema (str): Schema name.
             datasource (Dict): Datasource configuration.
             tables (List[str]): Tables referenced in the query.
+            entities (Optional[Dict]): Extracted entities from NLQ, including dates.
 
         Returns:
-            str: Adjusted SQL query with date columns cast to DATE.
+            str: Adjusted SQL query with date columns cast appropriately.
+
+        Raises:
+            ExecutionError: If invalid date formats are detected in entities.
         """
         try:
+            # Validate date formats in entities
+            if entities and "dates" in entities:
+                for date_str in entities.get("dates", []):
+                    if not self._validate_date_format(date_str):
+                        error_msg = f"Invalid date format '{date_str}'. Please use YYYY-MM-DD (e.g., 2016-01-01)."
+                        self.logger.error(error_msg)
+                        raise ExecutionError(error_msg)
+
             metadata = self.storage_manager.get_metadata(datasource, schema)
             table_metadata = {t["name"]: t for t in metadata.get("tables", []) if isinstance(t, dict) and "name" in t}
             date_columns = {}
@@ -191,52 +217,42 @@ class DataExecutor:
                     self.logger.debug(f"No metadata found for table {table} in schema {schema}")
                     continue
                 columns = table_metadata[table].get("columns", [])
-                sample_data = table_metadata[table].get("sample_data", [])
-                unique_values = {col["name"]: col.get("unique_values", []) for col in columns}
                 for col in columns:
-                    if col["type"].upper() == "STRING":
-                        # Check sample_data first
-                        if sample_data:
-                            for row in sample_data:
-                                if col["name"] in row and self._is_date_like(str(row[col["name"]])):
-                                    date_columns[f"{table}.{col['name']}"] = col["name"]
-                                    self.logger.debug(f"Detected date-like column {table}.{col['name']} in sample_data")
-                                    break
-                        # Fallback to unique_values if sample_data is empty
-                        elif unique_values.get(col["name"]):
-                            for value in unique_values[col["name"]]:
-                                if self._is_date_like(str(value)):
-                                    date_columns[f"{table}.{col['name']}"] = col["name"]
-                                    self.logger.debug(f"Detected date-like column {table}.{col['name']} in unique_values")
-                                    break
+                    if col["type"].upper() == "STRING" and (
+                        any(self._is_date_like(str(v)) for v in col.get("unique_values", [])) or
+                        "date" in col["name"].lower()
+                    ):
+                        date_columns[f"{table}.{col['name']}"] = col["name"]
+                        self.logger.debug(f"Detected date-like column {table}.{col['name']}")
 
             if not date_columns:
                 self.logger.debug(f"No date-like columns detected for tables {tables} in schema {schema}")
                 return sql_query
 
-            # Find date functions like EXTRACT(YEAR FROM column), YEAR(column), or direct column references
-            date_function_pattern = r"\b(EXTRACT\((?:YEAR|MONTH|DAY)\s+FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)\)|YEAR\(([^)]+)\)|([a-zA-Z_][a-zA-Z0-9_]*))\b"
             adjusted_query = sql_query
-            for match in re.finditer(date_function_pattern, sql_query, re.IGNORECASE):
-                full_match = match.group(0)
-                column = match.group(2) or match.group(3) or match.group(4)  # Extract column name
-                # Find the table for the column
-                for table in tables:
-                    if f"{table}.{column}" in date_columns:
-                        if match.group(1) or match.group(2):  # EXTRACT or YEAR function
-                            replacement = f"CAST({column} AS DATE)"
-                            adjusted_query = adjusted_query.replace(full_match, replacement)
-                            self.logger.debug(f"Replaced date function '{full_match}' with '{replacement}' for {table}.{column}")
-                        elif match.group(4):  # Direct column reference (e.g., in WHERE clause)
-                            replacement = f"CAST({column} AS DATE)"
-                            adjusted_query = adjusted_query.replace(f"{column}", replacement, 1)
-                            self.logger.debug(f"Replaced column reference '{column}' with '{replacement}' for {table}.{column}")
-                        break
+            for table_col, col_name in date_columns.items():
+                table, col = table_col.split(".")
+                # Handle YEAR(column) or EXTRACT(YEAR FROM column)
+                adjusted_query = re.sub(
+                    rf"\bYEAR\({col}\)\b",
+                    f"strftime(TRY_CAST(strptime({col}, '%Y-%m-%d') AS DATE), '%Y')",
+                    adjusted_query,
+                    flags=re.IGNORECASE
+                )
+                # Handle column LIKE 'YYYY%'
+                adjusted_query = re.sub(
+                    rf"\b{col}\s+LIKE\s+'(\d{{4}})%'",
+                    f"strftime(TRY_CAST(strptime({col}, '%Y-%m-%d') AS DATE), '%Y') = '$1'",
+                    adjusted_query,
+                    flags=re.IGNORECASE
+                )
             if adjusted_query != sql_query:
                 self.logger.debug(f"Adjusted SQL query for date columns: {adjusted_query}")
                 if self.enable_component_logging:
                     print(f"Component Output: Adjusted SQL query for date columns")
             return adjusted_query
+        except ExecutionError:
+            raise
         except Exception as e:
             self.logger.error(f"Failed to adjust SQL query for date columns: {str(e)}\n{traceback.format_exc()}")
             return sql_query
@@ -279,10 +295,8 @@ class DataExecutor:
                 SET s3_secret_access_key = '{secret_key}';
                 SET s3_region = '{region}';
             """)
-            delimiter = metadata.get("delimiter", ",")
             loaded_tables = []
             file_type = self.storage_manager.file_type
-            prefix = datasource['connection']['database']
             for table in tables_to_load:
                 s3_path = self.storage_manager.get_s3_path(table)
                 if not s3_path:
@@ -291,20 +305,61 @@ class DataExecutor:
                 self.logger.debug(f"Attempting to load table {table} from {s3_path} with file type {file_type}")
                 if self.enable_component_logging:
                     print(f"Component Output: Loading table {table} from {s3_path}")
+
+                # Get table metadata
+                table_metadata = next((t for t in metadata.get("tables", []) if t["name"] == table), None)
+                if not table_metadata:
+                    self.logger.warning(f"No metadata found for table {table}")
+                    continue
+                columns = table_metadata.get("columns", [])
+                column_names = [col["name"] for col in columns]
+                date_columns = [
+                    col["name"] for col in columns
+                    if col["type"].upper() == "STRING" and (
+                        any(self._is_date_like(str(v)) for v in col.get("unique_values", [])) or
+                        "date" in col["name"].lower()
+                    )
+                ]
+
                 try:
+                    # Log inferred CSV schema for debugging
+                    try:
+                        schema_df = con.execute(f"DESCRIBE SELECT * FROM read_csv('{s3_path}', header=true, auto_detect=true);").fetch_df()
+                        self.logger.debug(f"Inferred CSV schema for {s3_path}: {schema_df.to_dict()}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to infer CSV schema for {s3_path}: {str(e)}")
+
                     if file_type == "csv":
+                        # Build SELECT clause with metadata-driven columns
+                        select_clause = []
+                        for col in columns:
+                            col_name = col["name"]
+                            if col_name in date_columns:
+                                select_clause.append(
+                                    f"TRY_CAST(strptime({col_name}, '%Y-%m-%d') AS DATE) AS {col_name}"
+                                )
+                            else:
+                                select_clause.append(col_name)
+                        select_clause_str = ", ".join(select_clause)
+
+                        # Specify column names explicitly
+                        columns_str = ", ".join([f"'{col}'" for col in column_names])
                         con.execute(f"""
-                            CREATE OR REPLACE VIEW {table} AS
-                            SELECT * FROM read_csv('{s3_path}', delim='{delimiter}', auto_detect=true);
+                            CREATE OR REPLACE TABLE {table} AS
+                            SELECT {select_clause_str}
+                            FROM read_csv('{s3_path}', header=true, auto_detect=true, columns=[{columns_str}]);
                         """)
+                        # Log loaded table schema
+                        schema_df = con.execute(f"DESCRIBE {table}").fetch_df()
+                        self.logger.debug(f"Loaded schema for table {table}: {schema_df.to_dict()}")
                     elif file_type == "parquet":
                         con.execute(f"""
-                            CREATE OR REPLACE VIEW {table} AS
+                            CREATE OR REPLACE TABLE {table} AS
                             SELECT * FROM read_parquet('{s3_path}');
                         """)
                     elif file_type == "orc":
                         con.execute(f"""
-                            CREATE OR REPLACE VIEW {table} AS
+                            CREATE OR REPLACE TABLE {table} AS
                             SELECT * FROM read_parquet('{s3_path}');
                         """)
                     else:
@@ -325,7 +380,19 @@ class DataExecutor:
                     self.storage_manager.store_rejected_query(
                         datasource, f"Load table {table}", schema, f"DuckDB error: {str(e)}", "unknown", "DATA_LOAD_ERROR"
                     )
-                    continue
+                    # Fallback: Try loading without metadata schema
+                    try:
+                        con.execute(f"""
+                            CREATE OR REPLACE TABLE {table} AS
+                            SELECT * FROM read_csv('{s3_path}', header=true, auto_detect=true);
+                        """)
+                        schema_df = con.execute(f"DESCRIBE {table}").fetch_df()
+                        self.logger.debug(f"Fallback loaded schema for table {table}: {schema_df.to_dict()}")
+                        loaded_tables.append(table)
+                        self.logger.info(f"Fallback: Successfully loaded table {table} from {s3_path} into DuckDB")
+                    except duckdb.Error as fallback_e:
+                        self.logger.error(f"Fallback failed for table {table} from {s3_path}: {str(fallback_e)}\n{traceback.format_exc()}")
+                        continue
             if not loaded_tables:
                 self.logger.error(f"No tables loaded for schema {schema}, requested tables: {table_names}")
                 con.close()
@@ -385,8 +452,8 @@ class DataExecutor:
                 self.logger.debug(f"SQL query tables: {sql_tables}")
                 if self.enable_component_logging:
                     print(f"Component Output: SQL query tables: {sql_tables}")
-                # Adjust SQL query for date columns
-                adjusted_sql_query = self._adjust_sql_for_date_columns(sql_query, schema, datasource, list(sql_tables))
+                adjusted_sql_query = self._adjust_sql_for_date_columns(sql_query, schema, datasource, list(sql_tables), prediction.get("entities") if prediction else None)
+                self.logger.debug(f"Adjusted SQL query: {adjusted_sql_query}")
                 if "read_csv(" in adjusted_sql_query.lower() or "read_parquet(" in adjusted_sql_query.lower():
                     con = duckdb.connect()
                     aws_config = self.config_utils.load_aws_config()
@@ -463,6 +530,12 @@ class DataExecutor:
                 if self.enable_component_logging:
                     print(f"Component Output: Executed S3 query for NLQ '{nlq}' in schema {schema}, {len(result_df)} rows saved to {csv_path}")
                 return sample_data, str(csv_path), adjusted_sql_query
+            except ExecutionError as e:
+                self.logger.error(f"Execution error in S3 query for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
+                self.storage_manager.store_rejected_query(
+                    datasource, nlq, schema, f"Execution error: {str(e)}", user, "INVALID_DATE_FORMAT"
+                )
+                raise
             except Exception as e:
                 self.logger.error(f"Unexpected error in S3 query for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
                 self.storage_manager.store_rejected_query(

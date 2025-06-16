@@ -1,0 +1,908 @@
+{
+  "schema": "default",
+  "delimiter": ",",
+  "tables": {
+    "brands": {
+      "name": "brands",
+      "description": "",
+      "columns": [
+        {
+          "name": "brand_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "brand_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Electra",
+            "Haro",
+            "Heller",
+            "Pure Cycles",
+            "Ritchey",
+            "Strider",
+            "Sun Bicycles",
+            "Surly",
+            "Trek"
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "candidates": {
+      "name": "candidates",
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "fullname",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "S1",
+            "c1",
+            "c2",
+            "S2"
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "categories": {
+      "name": "categories",
+      "description": "",
+      "columns": [
+        {
+          "name": "category_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "category_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Children Bicycles",
+            "Comfort Bicycles",
+            "Cruisers Bicycles",
+            "Cyclocross Bicycles",
+            "Electric Bikes",
+            "Mountain Bikes",
+            "Road Bikes"
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "customers": {
+      "name": "customers",
+      "description": "",
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "first_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Debra",
+            "Kasha",
+            "Tameka",
+            "Daryl",
+            "Charolette",
+            "Lyndsey",
+            "Latasha",
+            "Jacquline",
+            "Genoveva",
+            "Pamelia"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "last_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Burks",
+            "Todd",
+            "Fisher",
+            "Spence",
+            "Rice",
+            "Bean",
+            "Hays",
+            "Duncan",
+            "Baldwin",
+            "Newman"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "(916) 381-6003",
+            "(716) 986-3359"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "debra.burks@yahoo.com",
+            "kasha.todd@yahoo.com",
+            "tameka.fisher@aol.com",
+            "daryl.spence@aol.com",
+            "charolette.rice@msn.com",
+            "lyndsey.bean@hotmail.com",
+            "latasha.hays@hotmail.com",
+            "jacquline.duncan@yahoo.com",
+            "genoveva.baldwin@msn.com",
+            "pamelia.newman@gmail.com"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "street",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "9273 Thorne Ave. ",
+            "910 Vine Street ",
+            "769C Honey Creek St. ",
+            "988 Pearl Lane ",
+            "107 River Dr. ",
+            "769 West Road ",
+            "7014 Manor Station Rd. ",
+            "15 Brown St. ",
+            "8550 Spruce Drive ",
+            "476 Chestnut Ave. "
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Orchard Park",
+            "Campbell",
+            "Redondo Beach",
+            "Uniondale",
+            "Sacramento",
+            "Fairport",
+            "Buffalo",
+            "Jackson Heights",
+            "Port Washington",
+            "Monroe"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "NY",
+            "CA"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "zip_code",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            14127,
+            95008,
+            90278,
+            11553,
+            95820,
+            14450,
+            14215,
+            11372,
+            11050,
+            10950
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "employees": {
+      "name": "employees",
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "fullname",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "S1",
+            "S2",
+            "e1",
+            "e2"
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "order_items": {
+      "name": "order_items",
+      "description": "",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "item_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            20,
+            8,
+            10,
+            16,
+            4,
+            3,
+            2
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "list_price",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            599.99,
+            1799.99,
+            1549.0,
+            2899.99,
+            999.99,
+            749.99
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "discount",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            0.2,
+            0.07,
+            0.05,
+            0.1
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "orders": {
+      "name": "orders",
+      "description": "",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            259,
+            1212,
+            523,
+            175,
+            1324,
+            94,
+            324,
+            1204,
+            60,
+            442
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "order_status",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            4
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "order_date",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "2016-01-01",
+            "2016-01-02",
+            "2016-01-03",
+            "2016-01-04",
+            "2016-01-05"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "required_date",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "2016-01-03",
+            "2016-01-04",
+            "2016-01-05",
+            "2016-01-06",
+            "2016-01-07",
+            "2016-01-08"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "shipped_date",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "2016-01-03",
+            "2016-01-05",
+            "2016-01-06",
+            "2016-01-08"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "staff_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            2,
+            6,
+            7,
+            3
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "products": {
+      "name": "products",
+      "description": "",
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "product_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Trek 820 - 2016",
+            "Ritchey Timberwolf Frameset - 2016",
+            "Surly Wednesday Frameset - 2016",
+            "Trek Fuel EX 8 29 - 2016",
+            "Heller Shagamaw Frame - 2016",
+            "Surly Ice Cream Truck Frameset - 2016",
+            "Trek Slash 8 27.5 - 2016",
+            "Trek Remedy 29 Carbon Frameset - 2016",
+            "Trek Conduit+ - 2016",
+            "Surly Straggler - 2016"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "brand_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            9,
+            5,
+            8,
+            3
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "category_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            6,
+            5,
+            4
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "model_year",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            2016
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "list_price",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            379.99,
+            749.99,
+            999.99,
+            2899.99,
+            1320.99,
+            469.99,
+            3999.99,
+            1799.99,
+            2999.99,
+            1549.0
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "staffs": {
+      "name": "staffs",
+      "description": "",
+      "columns": [
+        {
+          "name": "staff_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "first_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Fabiola",
+            "Mireya",
+            "Genna",
+            "Virgie",
+            "Jannette",
+            "Marcelene",
+            "Venita",
+            "Kali",
+            "Layla",
+            "Bernardine"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "last_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Jackson",
+            "Copeland",
+            "Serrano",
+            "Wiggins",
+            "David",
+            "Boyer",
+            "Daniel",
+            "Vargas",
+            "Terrell",
+            "Houston"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "fabiola.jackson@bikes.shop",
+            "mireya.copeland@bikes.shop",
+            "genna.serrano@bikes.shop",
+            "virgie.wiggins@bikes.shop",
+            "jannette.david@bikes.shop",
+            "marcelene.boyer@bikes.shop",
+            "venita.daniel@bikes.shop",
+            "kali.vargas@bikes.shop",
+            "layla.terrell@bikes.shop",
+            "bernardine.houston@bikes.shop"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "(831) 555-5554",
+            "(831) 555-5555",
+            "(831) 555-5556",
+            "(831) 555-5557",
+            "(516) 379-4444",
+            "(516) 379-4445",
+            "(516) 379-4446",
+            "(972) 530-5555",
+            "(972) 530-5556",
+            "(972) 530-5557"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "active",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "manager_id",
+          "type": "float",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1.0,
+            2.0,
+            5.0,
+            7.0
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "stocks": {
+      "name": "stocks",
+      "description": "",
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            27,
+            5,
+            6,
+            23,
+            22,
+            0,
+            8,
+            11,
+            15
+          ],
+          "synonyms": []
+        }
+      ]
+    },
+    "stores": {
+      "name": "stores",
+      "description": "",
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            1,
+            2,
+            3
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "store_name",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Santa Cruz Bikes",
+            "Baldwin Bikes",
+            "Rowlett Bikes"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "(831) 476-4321",
+            "(516) 379-8888",
+            "(972) 530-5555"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "santacruz@bikes.shop",
+            "baldwin@bikes.shop",
+            "rowlett@bikes.shop"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "street",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "3700 Portola Drive",
+            "4200 Chestnut Lane",
+            "8000 Fairway Avenue"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "Santa Cruz",
+            "Baldwin",
+            "Rowlett"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            "CA",
+            "NY",
+            "TX"
+          ],
+          "synonyms": []
+        },
+        {
+          "name": "zip_code",
+          "type": "integer",
+          "description": "",
+          "references": null,
+          "unique_values": [
+            95060,
+            11432,
+            75088
+          ],
+          "synonyms": []
+        }
+      ]
+    }
+  }
+}
