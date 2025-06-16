@@ -12,12 +12,10 @@
     "validation": {
       "enabled": true,
       "date_formats": [
-        {"pattern": "\\d{4}-\\d{2}-\\d{2}", "strftime": "%Y-%m-%d"},
-        {"pattern": "\\d{2}/\\d{2}/\\d{4}", "strftime": "%m/%d/%Y"},
-        {"pattern": "\\d{2}-\\d{2}-\\d{4}", "strftime": "%d-%Y"}
+        {"pattern": "\\d{4}-\\d{2}-\\d{2}", "strftime": "%Y-%m-%d"}
       ],
-      "error_message": "Invalid date format. Use YYYY-MM-DD, MM/DD/YYYY, or DD-MM-DDYYYY.",
-      "entities": ["dates", "names", "objects", "places"]
+      "error_message": "Invalid date format. Use YYYY-MM-DD.",
+      "entities": ["dates", "objects", "places"]
     }
   },
   "training_settings": {
