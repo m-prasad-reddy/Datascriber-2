@@ -1,8 +1,8 @@
 {
   "schema": "default",
   "delimiter": ",",
-  "tables": [
-    {
+  "tables": {
+    "brands": {
       "name": "brands",
       "description": "",
       "columns": [
@@ -44,7 +44,7 @@
         }
       ]
     },
-    {
+    "candidates": {
       "name": "candidates",
       "description": "",
       "columns": [
@@ -76,7 +76,7 @@
         }
       ]
     },
-    {
+    "categories": {
       "name": "categories",
       "description": "",
       "columns": [
@@ -114,7 +114,7 @@
         }
       ]
     },
-    {
+    "customers": {
       "name": "customers",
       "description": "",
       "columns": [
@@ -275,7 +275,7 @@
         }
       ]
     },
-    {
+    "employees": {
       "name": "employees",
       "description": "",
       "columns": [
@@ -307,7 +307,7 @@
         }
       ]
     },
-    {
+    "order_items": {
       "name": "order_items",
       "description": "",
       "columns": [
@@ -395,7 +395,7 @@
         }
       ]
     },
-    {
+    "orders": {
       "name": "orders",
       "description": "",
       "columns": [
@@ -515,7 +515,7 @@
         }
       ]
     },
-    {
+    "products": {
       "name": "products",
       "description": "",
       "columns": [
@@ -613,7 +613,7 @@
         }
       ]
     },
-    {
+    "staffs": {
       "name": "staffs",
       "description": "",
       "columns": [
@@ -749,7 +749,7 @@
         }
       ]
     },
-    {
+    "stocks": {
       "name": "stocks",
       "description": "",
       "columns": [
@@ -802,7 +802,7 @@
         }
       ]
     },
-    {
+    "stores": {
       "name": "stores",
       "description": "",
       "columns": [
@@ -904,5 +904,5 @@
         }
       ]
     }
-  ]
+  }
 }

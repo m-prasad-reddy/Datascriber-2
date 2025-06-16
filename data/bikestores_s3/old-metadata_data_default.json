@@ -1,0 +1,408 @@
+{
+  "schema": "default",
+  "delimiter": ",",
+  "tables": [
+    {
+      "name": "brands",
+      "description": "",
+      "columns": [
+        {
+          "name": "brand_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "brand_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "candidates",
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "fullname",
+          "type": "string",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "categories",
+      "description": "",
+      "columns": [
+        {
+          "name": "category_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "category_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "customers",
+      "description": "",
+      "columns": [
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "first_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "last_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "street",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "zip_code",
+          "type": "integer",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "employees",
+      "description": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "fullname",
+          "type": "string",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "order_items",
+      "description": "",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "item_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "list_price",
+          "type": "float",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "discount",
+          "type": "float",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "orders",
+      "description": "",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "customer_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "order_status",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "order_date",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "required_date",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "shipped_date",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "staff_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "products",
+      "description": "",
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "product_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "brand_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "category_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "model_year",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "list_price",
+          "type": "float",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "staffs",
+      "description": "",
+      "columns": [
+        {
+          "name": "staff_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "first_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "last_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "active",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "manager_id",
+          "type": "float",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "stocks",
+      "description": "",
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "product_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "description": "",
+          "references": null
+        }
+      ]
+    },
+    {
+      "name": "stores",
+      "description": "",
+      "columns": [
+        {
+          "name": "store_id",
+          "type": "integer",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "store_name",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "street",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "description": "",
+          "references": null
+        },
+        {
+          "name": "zip_code",
+          "type": "integer",
+          "description": "",
+          "references": null
+        }
+      ]
+    }
+  ]
+}
