@@ -117,10 +117,9 @@ class DataExecutor:
             self.logger.warning("SQL query is empty or not a string")
             return False
         sql_query = sql_query.strip()
-        # Allow DuckDB-specific read_csv/read_parquet or standard SELECT/WITH
-        if not (re.match(r"^\s*(SELECT|WITH)\s+", sql_query, re.IGNORECASE) or
-                "read_csv(" in sql_query.lower() or "read_parquet(" in sql_query.lower()):
-            self.logger.warning(f"SQL query missing SELECT, WITH, or DuckDB read function: {sql_query[:100]}...")
+        # Simplified validation to allow basic SELECT queries
+        if not re.match(r"^\s*SELECT\s+", sql_query, re.IGNORECASE):
+            self.logger.warning(f"SQL query missing SELECT: {sql_query[:100]}...")
             return False
         if not sql_query.endswith(";"):
             sql_query += ";"
@@ -155,6 +154,93 @@ class DataExecutor:
             self.logger.error(f"Failed to extract tables from SQL query: {str(e)}\n{traceback.format_exc()}")
             return set()
 
+    def _is_date_like(self, value: str) -> bool:
+        """Check if a string value matches a common date format (e.g., YYYY-MM-DD, YYYY-MM, YYYY).
+
+        Args:
+            value (str): Value to check.
+
+        Returns:
+            bool: True if the value is date-like, False otherwise.
+        """
+        try:
+            # Match YYYY-MM-DD, YYYY-MM, or YYYY
+            date_pattern = r"^\d{4}(-\d{2}(-\d{2})?)?$"
+            return bool(re.match(date_pattern, value))
+        except Exception:
+            return False
+
+    def _adjust_sql_for_date_columns(self, sql_query: str, schema: str, datasource: Dict, tables: List[str]) -> str:
+        """Adjust SQL query to cast string-type date columns to DATE based on metadata.
+
+        Args:
+            sql_query (str): Original SQL query.
+            schema (str): Schema name.
+            datasource (Dict): Datasource configuration.
+            tables (List[str]): Tables referenced in the query.
+
+        Returns:
+            str: Adjusted SQL query with date columns cast to DATE.
+        """
+        try:
+            metadata = self.storage_manager.get_metadata(datasource, schema)
+            table_metadata = {t["name"]: t for t in metadata.get("tables", []) if isinstance(t, dict) and "name" in t}
+            date_columns = {}
+            for table in tables:
+                if table not in table_metadata:
+                    self.logger.debug(f"No metadata found for table {table} in schema {schema}")
+                    continue
+                columns = table_metadata[table].get("columns", [])
+                sample_data = table_metadata[table].get("sample_data", [])
+                unique_values = {col["name"]: col.get("unique_values", []) for col in columns}
+                for col in columns:
+                    if col["type"].upper() == "STRING":
+                        # Check sample_data first
+                        if sample_data:
+                            for row in sample_data:
+                                if col["name"] in row and self._is_date_like(str(row[col["name"]])):
+                                    date_columns[f"{table}.{col['name']}"] = col["name"]
+                                    self.logger.debug(f"Detected date-like column {table}.{col['name']} in sample_data")
+                                    break
+                        # Fallback to unique_values if sample_data is empty
+                        elif unique_values.get(col["name"]):
+                            for value in unique_values[col["name"]]:
+                                if self._is_date_like(str(value)):
+                                    date_columns[f"{table}.{col['name']}"] = col["name"]
+                                    self.logger.debug(f"Detected date-like column {table}.{col['name']} in unique_values")
+                                    break
+
+            if not date_columns:
+                self.logger.debug(f"No date-like columns detected for tables {tables} in schema {schema}")
+                return sql_query
+
+            # Find date functions like EXTRACT(YEAR FROM column), YEAR(column), or direct column references
+            date_function_pattern = r"\b(EXTRACT\((?:YEAR|MONTH|DAY)\s+FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)\)|YEAR\(([^)]+)\)|([a-zA-Z_][a-zA-Z0-9_]*))\b"
+            adjusted_query = sql_query
+            for match in re.finditer(date_function_pattern, sql_query, re.IGNORECASE):
+                full_match = match.group(0)
+                column = match.group(2) or match.group(3) or match.group(4)  # Extract column name
+                # Find the table for the column
+                for table in tables:
+                    if f"{table}.{column}" in date_columns:
+                        if match.group(1) or match.group(2):  # EXTRACT or YEAR function
+                            replacement = f"CAST({column} AS DATE)"
+                            adjusted_query = adjusted_query.replace(full_match, replacement)
+                            self.logger.debug(f"Replaced date function '{full_match}' with '{replacement}' for {table}.{column}")
+                        elif match.group(4):  # Direct column reference (e.g., in WHERE clause)
+                            replacement = f"CAST({column} AS DATE)"
+                            adjusted_query = adjusted_query.replace(f"{column}", replacement, 1)
+                            self.logger.debug(f"Replaced column reference '{column}' with '{replacement}' for {table}.{column}")
+                        break
+            if adjusted_query != sql_query:
+                self.logger.debug(f"Adjusted SQL query for date columns: {adjusted_query}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Adjusted SQL query for date columns")
+            return adjusted_query
+        except Exception as e:
+            self.logger.error(f"Failed to adjust SQL query for date columns: {str(e)}\n{traceback.format_exc()}")
+            return sql_query
+
     def _get_s3_duckdb_connection(self, schema: str, datasource: Dict, table_names: List[str]) -> Tuple[Optional[duckdb.DuckDBPyConnection], List[str]]:
         """Load S3 data for multiple tables into a DuckDB in-memory database.
 
@@ -187,6 +273,7 @@ class DataExecutor:
                 return None, []
 
             con = duckdb.connect()
+            con.execute("INSTALL httpfs; LOAD httpfs;")
             con.execute(f"""
                 SET s3_access_key_id = '{access_key}';
                 SET s3_secret_access_key = '{secret_key}';
@@ -195,13 +282,12 @@ class DataExecutor:
             delimiter = metadata.get("delimiter", ",")
             loaded_tables = []
             file_type = self.storage_manager.file_type
-            prefix = f"{datasource['connection']['database']}/"
+            prefix = datasource['connection']['database']
             for table in tables_to_load:
-                part_files = self.storage_manager._get_table_part_files(table, prefix)
-                if not part_files:
-                    self.logger.warning(f"No part files found for table {table} in schema {schema}")
+                s3_path = self.storage_manager.get_s3_path(table)
+                if not s3_path:
+                    self.logger.warning(f"No S3 path found for table {table}")
                     continue
-                s3_path = f"s3://{datasource['connection']['bucket_name']}/{part_files[0]}"
                 self.logger.debug(f"Attempting to load table {table} from {s3_path} with file type {file_type}")
                 if self.enable_component_logging:
                     print(f"Component Output: Loading table {table} from {s3_path}")
@@ -230,9 +316,15 @@ class DataExecutor:
                         print(f"Component Output: Loaded table {table} from {s3_path} into DuckDB")
                 except duckdb.IOException as e:
                     self.logger.error(f"DuckDB IO error loading table {table} from {s3_path}: {str(e)}\n{traceback.format_exc()}")
+                    self.storage_manager.store_rejected_query(
+                        datasource, f"Load table {table}", schema, f"DuckDB IO error: {str(e)}", "unknown", "DATA_LOAD_ERROR"
+                    )
                     continue
                 except duckdb.Error as e:
                     self.logger.error(f"DuckDB error loading table {table} from {s3_path}: {str(e)}\n{traceback.format_exc()}")
+                    self.storage_manager.store_rejected_query(
+                        datasource, f"Load table {table}", schema, f"DuckDB error: {str(e)}", "unknown", "DATA_LOAD_ERROR"
+                    )
                     continue
             if not loaded_tables:
                 self.logger.error(f"No tables loaded for schema {schema}, requested tables: {table_names}")
@@ -279,9 +371,8 @@ class DataExecutor:
         self.storage_manager._set_datasource(datasource)
         for schema in schemas:
             try:
-                # Get predicted tables from TIA
+                self.logger.debug(f"Executing SQL query for NLQ '{nlq}' in schema {schema}: {sql_query}")
                 tables = prediction.get("tables", []) if prediction else []
-                # Get metadata tables
                 metadata = self.storage_manager.get_metadata(datasource, schema)
                 metadata_tables = [t["name"] for t in metadata.get("tables", []) if isinstance(t, dict) and "name" in t]
                 self.logger.debug(f"Metadata tables for schema {schema}: {metadata_tables}")
@@ -290,13 +381,13 @@ class DataExecutor:
                 if not tables and metadata_tables:
                     tables = metadata_tables
                     self.logger.debug(f"Using metadata tables as fallback: {tables}")
-                # Extract tables from SQL query
                 sql_tables = self._extract_tables_from_sql(sql_query)
                 self.logger.debug(f"SQL query tables: {sql_tables}")
                 if self.enable_component_logging:
                     print(f"Component Output: SQL query tables: {sql_tables}")
-                # If query uses read_csv/read_parquet directly, execute without loading tables
-                if "read_csv(" in sql_query.lower() or "read_parquet(" in sql_query.lower():
+                # Adjust SQL query for date columns
+                adjusted_sql_query = self._adjust_sql_for_date_columns(sql_query, schema, datasource, list(sql_tables))
+                if "read_csv(" in adjusted_sql_query.lower() or "read_parquet(" in adjusted_sql_query.lower():
                     con = duckdb.connect()
                     aws_config = self.config_utils.load_aws_config()
                     con.execute(f"""
@@ -305,7 +396,8 @@ class DataExecutor:
                         SET s3_region = '{aws_config.get("region")}';
                     """)
                     try:
-                        result_df = con.execute(sql_query).fetch_df()
+                        result_df = con.execute(adjusted_sql_query).fetch_df()
+                        self.logger.debug(f"Direct S3 query executed, rows: {len(result_df)}")
                     except duckdb.Error as e:
                         self.logger.error(f"DuckDB query execution failed for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
                         self.storage_manager.store_rejected_query(
@@ -316,7 +408,6 @@ class DataExecutor:
                     finally:
                         con.close()
                 else:
-                    # Load tables for standard queries
                     if not tables and not sql_tables:
                         self.logger.warning(f"No tables identified for schema {schema}, NLQ: {nlq}")
                         self.storage_manager.store_rejected_query(
@@ -343,7 +434,7 @@ class DataExecutor:
                         con.close()
                         continue
                     try:
-                        result_df = con.execute(sql_query).fetch_df()
+                        result_df = con.execute(adjusted_sql_query).fetch_df()
                         self.logger.debug(f"Query executed successfully for NLQ: {nlq}, rows: {len(result_df)}")
                         if self.enable_component_logging:
                             print(f"Component Output: Query executed, {len(result_df)} rows for NLQ: {nlq}")
@@ -371,7 +462,7 @@ class DataExecutor:
                 self.logger.info(f"Generated output for NLQ '{nlq}' in schema {schema}: {csv_path}, rows: {len(result_df)}")
                 if self.enable_component_logging:
                     print(f"Component Output: Executed S3 query for NLQ '{nlq}' in schema {schema}, {len(result_df)} rows saved to {csv_path}")
-                return sample_data, str(csv_path), sql_query
+                return sample_data, str(csv_path), adjusted_sql_query
             except Exception as e:
                 self.logger.error(f"Unexpected error in S3 query for NLQ '{nlq}' in schema {schema}: {str(e)}\n{traceback.format_exc()}")
                 self.storage_manager.store_rejected_query(

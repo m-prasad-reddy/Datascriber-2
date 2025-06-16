@@ -359,88 +359,97 @@ class Orchestrator:
         Raises:
             OrchestrationError: If processing fails critically.
         """
-        try:
-            table_identifier = TableIdentifier(self.config_utils)
-            prompt_generator = PromptGenerator(self.config_utils)
-            data_executor = DataExecutor(self.config_utils)
-            self.datasource = datasource
-            schemas = schemas or datasource["connection"].get("schemas", [])
-            if not schemas or not all(isinstance(s, str) and s.strip() for s in schemas):
-                self.logger.error(f"Invalid schemas input: {schemas}")
-                raise OrchestrationError(f"Invalid schemas: {schemas}")
-            self.logger.debug(f"Processing NLQ '{nlq}' for schemas {schemas}")
-            if not self.validate_metadata(datasource, schemas):
-                self.notify_admin(datasource, nlq, schemas, "Invalid metadata", entities)
-                return None
-            entities = entities or self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource).get("entities", {})
-            tia_result = table_identifier.identify_tables(datasource, nlq, schemas)
-            if not tia_result.get("tables"):
-                self.logger.warning(f"No tables identified for NLQ: {nlq}, attempting fallback")
-                nlp_result = self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource)
-                tokens = nlp_result.get("tokens", [])
-                for token in tokens:
-                    for key, syn_list in self.default_mappings.items():
-                        if token.lower() == key or token.lower() in [s.lower() for s in syn_list]:
-                            metadata = self.config_utils.load_metadata(datasource["name"], [schemas[0]]).get(schemas[0], {})
-                            if any(t["name"].lower() == key for t in metadata.get("tables", [])):
-                                tia_result["tables"] = [f"{schemas[0]}.{key}"]
-                                break
-                    if tia_result["tables"]:
-                        break
-            if not tia_result["tables"]:
-                self.notify_admin(datasource, nlq, schemas, "No tables identified by TIA", entities)
-                return None
-            tia_result["entities"] = entities
-            if self.user == "admin":
-                predicted_tables, _ = self._handle_admin(datasource, nlq, schemas[0], entities, tia_result)
-                return {"predicted_tables": predicted_tables, "tia_result": tia_result, "entities": entities}
-            # Use validated_tables if available (from admin feedback)
-            tia_result["tables"] = self.validated_tables if self.validated_tables else tia_result["tables"]
-            self.logger.debug(f"Using tables for NLQ '{nlq}': {tia_result['tables']}")
-            if self.enable_component_logging:
-                print(f"Component Output: Using tables for NLQ '{nlq}': {tia_result['tables']}")
-            system_prompt = prompt_generator.generate_system_prompt(datasource, schemas)
-            user_prompt = prompt_generator.generate_user_prompt(datasource, nlq, schemas, entities, tia_result)
-            sql_query = prompt_generator.generate_sql(datasource, system_prompt, user_prompt, schemas, entities, tia_result, self.user)
-            sample_data, csv_path, _ = data_executor.execute_query(
-                datasource=datasource,
-                prompt=user_prompt,
-                schemas=schemas,
-                user=self.user,
-                nlq=nlq,
-                system_prompt=system_prompt,
-                prediction=tia_result
-            )
-            if self.enable_component_logging:
-                print(f"Component Output: Generated SQL for NLQ '{nlq}': {sql_query}")
-            if sample_data is None:
-                self.notify_admin(datasource, nlq, schemas, "Query execution returned no data", entities)
-                return None
-            result = {
-                "tables": tia_result["tables"],
-                "columns": tia_result["columns"],
-                "extracted_values": tia_result["extracted_values"],
-                "placeholders": tia_result["placeholders"],
-                "entities": entities,
-                "prompt": user_prompt,
-                "sql_query": sql_query,
-                "sample_data": sample_data.to_dict(orient="records") if sample_data is not None else [],
-                "csv_path": csv_path
-            }
-            scenario_id = self._get_next_scenario_id(datasource)
-            training_row = prompt_generator.generate_training_data(
-                datasource, nlq, schemas[0], entities, sql_query, tia_result, scenario_id=scenario_id
-            )
-            prompt_generator.save_training_data(datasource, [training_row])
-            self.logger.info(f"Processed NLQ: {nlq}, saved training data with scenario_id: {scenario_id}")
-            if self.enable_component_logging:
-                print(f"Component Output: Processed NLQ '{nlq}' with {len(result['sample_data'])} rows, scenario_id: {scenario_id}")
-            return result
-        except Exception as e:
-            self.notify_admin(datasource, nlq, schemas, str(e), entities)
-            self.logger.error(f"Failed to process NLQ '{nlq}': {str(e)}\n{traceback.format_exc()}")
-            print(f"Error: Failed to process NLQ: {str(e)}")
-            return None
+        max_retries = 1  # Reduced to minimize log clutter
+        for attempt in range(max_retries):
+            try:
+                table_identifier = TableIdentifier(self.config_utils)
+                prompt_generator = PromptGenerator(self.config_utils)
+                data_executor = DataExecutor(self.config_utils)
+                self.datasource = datasource
+                schemas = schemas or datasource["connection"].get("schemas", [])
+                if not schemas or not all(isinstance(s, str) and s.strip() for s in schemas):
+                    self.logger.error(f"Invalid schemas input: {schemas}")
+                    raise OrchestrationError(f"Invalid schemas: {schemas}")
+                self.logger.debug(f"Processing NLQ '{nlq}' for schemas {schemas}, attempt {attempt + 1}")
+                if not self.validate_metadata(datasource, schemas):
+                    self.notify_admin(datasource, nlq, schemas, "Invalid metadata", entities)
+                    return None
+                entities = entities or self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource).get("entities", {})
+                tia_result = table_identifier.identify_tables(datasource, nlq, schemas)
+                if not tia_result.get("tables"):
+                    self.logger.warning(f"No tables identified for NLQ: {nlq}, attempting fallback")
+                    nlp_result = self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource)
+                    tokens = nlp_result.get("tokens", [])
+                    for token in tokens:
+                        for key, syn_list in self.default_mappings.items():
+                            if token.lower() == key or token.lower() in [s.lower() for s in syn_list]:
+                                metadata = self.config_utils.load_metadata(datasource["name"], [schemas[0]]).get(schemas[0], {})
+                                if any(t["name"].lower() == key for t in metadata.get("tables", [])):
+                                    tia_result["tables"] = [f"{schemas[0]}.{key}"]
+                                    break
+                        if tia_result["tables"]:
+                            break
+                if not tia_result["tables"]:
+                    self.notify_admin(datasource, nlq, schemas, "No tables identified by TIA", entities)
+                    return None
+                tia_result["entities"] = entities
+                if self.user == "admin":
+                    predicted_tables, _ = self._handle_admin(datasource, nlq, schemas[0], entities, tia_result)
+                    return {"predicted_tables": predicted_tables, "tia_result": tia_result, "entities": entities}
+                # Use validated_tables if available (from admin feedback)
+                tia_result["tables"] = self.validated_tables if self.validated_tables else tia_result["tables"]
+                self.logger.debug(f"Using tables for NLQ '{nlq}': {tia_result['tables']}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Using tables for NLQ '{nlq}': {tia_result['tables']}")
+                system_prompt = prompt_generator.generate_system_prompt(datasource, schemas)
+                user_prompt = prompt_generator.generate_user_prompt(datasource, nlq, schemas, entities, tia_result)
+                sql_query = prompt_generator.generate_sql(datasource, system_prompt, user_prompt, schemas, entities, tia_result, self.user)
+                sample_data, csv_path, _ = data_executor.execute_query(
+                    datasource=datasource,
+                    prompt=user_prompt,
+                    schemas=schemas,
+                    user=self.user,
+                    nlq=nlq,
+                    system_prompt=system_prompt,
+                    prediction=tia_result
+                )
+                if self.enable_component_logging:
+                    print(f"Component Output: Generated SQL for NLQ '{nlq}': {sql_query}")
+                if sample_data is None:
+                    self.notify_admin(datasource, nlq, schemas, "Query execution returned no data", entities)
+                    if attempt == max_retries - 1:
+                        self.logger.error(f"Max retries ({max_retries}) reached for NLQ: {nlq}")
+                        return None
+                    self.logger.warning(f"Query failed for NLQ: {nlq}, retrying ({attempt + 2}/{max_retries})")
+                    continue
+                result = {
+                    "tables": tia_result["tables"],
+                    "columns": tia_result["columns"],
+                    "extracted_values": tia_result["extracted_values"],
+                    "placeholders": tia_result["placeholders"],
+                    "entities": entities,
+                    "prompt": user_prompt,
+                    "sql_query": sql_query,
+                    "sample_data": sample_data.to_dict(orient="records") if sample_data is not None else [],
+                    "csv_path": csv_path
+                }
+                scenario_id = self._get_next_scenario_id(datasource)
+                training_row = prompt_generator.generate_training_data(
+                    datasource, nlq, schemas[0], entities, sql_query, tia_result, scenario_id=scenario_id
+                )
+                prompt_generator.save_training_data(datasource, [training_row])
+                self.logger.info(f"Processed NLQ: {nlq}, saved training data with scenario_id: {scenario_id}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Processed NLQ '{nlq}' with {len(result['sample_data'])} rows, scenario_id: {scenario_id}")
+                return result
+            except Exception as e:
+                self.notify_admin(datasource, nlq, schemas, str(e), entities)
+                self.logger.error(f"Failed to process NLQ '{nlq}' on attempt {attempt + 1}: {str(e)}\n{traceback.format_exc()}")
+                if attempt == max_retries - 1:
+                    print(f"Error: Failed to process NLQ after {max_retries} attempts: {str(e)}")
+                    return None
+                self.logger.warning(f"Retrying NLQ: {nlq}, attempt {attempt + 2}/{max_retries}")
+                continue
 
     def notify_admin(self, datasource: Dict, nlq: str, schemas: List[str], reason: str, entities: Optional[Dict] = None) -> None:
         """Notify admin of a failed query.

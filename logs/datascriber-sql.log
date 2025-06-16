@@ -1,0 +1,889 @@
+2025-06-16 19:17:40	DEBUG - root - File logging initialized to: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\logs\datascriber.log
+2025-06-16 19:17:40	INFO - root - Logging initialized: level=DEBUG, file=logs\datascriber.log, http_logging=False, component_logging=True
+2025-06-16 19:17:40	INFO - main - Starting Datascriber v1.1.0 on Windows 10
+2025-06-16 19:17:40	DEBUG - main - Python: 3.11.10 | packaged by Anaconda, Inc. | (main, Oct  3 2024, 07:22:26) [MSC v.1929 64 bit (AMD64)], Dependencies: pyspark==3.5.1, accelerate==1.5.2, aiobotocore==2.12.0, aiohappyeyeballs==2.6.1, aiohttp==3.11.14, aioitertools==0.12.0, aioodbc==0.5.0, aiosignal==1.3.2, altair==5.4.1, annotated-types==0.7.0, anyio==4.9.0, apache-libcloud==3.8.0, asn1crypto==1.5.1, attrs==24.2.0, azure-ai-textanalytics==5.3.0, azure-common==1.1.28, azure-core==1.34.0, blinker==1.9.0, blis==0.7.11, boto3==1.34.0, botocore==1.34.51, cachetools==5.5.0, catalogue==2.0.10, certifi==2024.8.30, cffi==1.17.1, charset-normalizer==3.4.0, click==8.1.7, cloudpathlib==0.16.0, colorama==0.4.6, confection==0.1.5, cryptography==44.0.2, curated-tokenizers==0.0.9, curated-transformers==0.1.1, cymem==2.0.11, databricks-sql-connector==4.0.2, dataclasses-json==0.6.7, datasets==3.4.1, decorator==5.2.1, dill==0.3.8, distlib==0.3.9, distro==1.9.0, dnspython==2.7.0, duckdb==1.3.0, elasticsearch==9.0.0, elastic-transport==8.17.1, en_core_web_lg==3.8.0, en_core_web_md==3.8.0, en_core_web_sm==3.8.0, en_core_web_trf==3.8.0, et_xmlfile==2.0.0, fastapi==0.115.12, filelock==3.18.0, Flask==3.1.0, frozenlist==1.5.0, fsspec==2023.12.2, gensim==4.3.3, gitdb==4.0.11, GitPython==3.1.43, googleapis-common-protos==1.65.0, google-ai-generativelanguage==0.6.10, google-api-core==2.21.0, google-api-python-client==2.149.0, google-auth==2.35.0, google-auth-httplib2==0.2.0, google-generativeai==0.8.3, greenlet==3.1.1, grpcio==1.67.0, grpcio-status==1.67.0, h11==0.14.0, hiredis==3.1.0, httpcore==1.0.7, httplib2==0.22.0, httpx==0.28.1, httpx-sse==0.4.0, huggingface-hub==0.29.3, idna==3.10, isodate==0.7.2, itsdangerous==2.2.0, Jinja2==3.1.4, jiter==0.9.0, jmespath==1.0.1, joblib==1.4.2, jsonpatch==1.33, jsonpointer==3.0.0, jsonschema==4.23.0, jsonschema-specifications==2024.10.1, langchain==0.3.23, langchain-community==0.3.21, langchain-core==0.3.52, langchain-experimental==0.3.4, langchain-openai==0.3.13, langchain-text-splitters==0.3.8, langcodes==3.5.0, langdetect==1.0.9, langgraph==0.3.25, langgraph-checkpoint==2.0.24, langgraph-prebuilt==0.1.8, langgraph-sdk==0.1.61, langsmith==0.3.24, language_data==1.3.0, loguru==0.7.3, lz4==4.4.4, marisa-trie==1.2.1, markdown-it-py==3.0.0, MarkupSafe==3.0.2, marshmallow==3.26.1, mdurl==0.1.2, mpmath==1.3.0, multidict==6.2.0, multiprocess==0.70.16, murmurhash==1.0.12, mypy-extensions==1.0.0, narwhals==1.10.0, networkx==3.4.2, nltk==3.9.1, numpy==1.24.3, oauthlib==3.2.2, openai==1.86.0, openpyxl==3.1.5, orjson==3.10.16, ormsgpack==1.9.1, packaging==24.1, pandas==2.0.3, pandasql==0.7.3, pillow==10.4.0, pip==24.2, platformdirs==4.3.6, portalocker==3.1.1, preshed==3.0.9, prettytable==3.16.0, propcache==0.3.0, protobuf==5.28.3, proto-plus==1.25.0, psutil==7.0.0, psycopg2==2.9.10, psycopg2-binary==2.9.10, py==1.11.0, pyarrow==17.0.0, pyasn1==0.6.1, pyasn1_modules==0.4.1, pycparser==2.22, pydantic==2.11.3, pydantic_core==2.33.1, pydantic-settings==2.8.1, pydeck==0.9.1, Pygments==2.18.0, PyJWT==2.10.1, pymongo==4.12.0, PyMySQL==1.1.1, pyodbc==5.0.1, pyOpenSSL==25.0.0, pyparsing==3.2.0, pysolr==3.10.0, python-dateutil==2.9.0.post0, python-dotenv==1.0.0, pytz==2024.2, pywin32==310, PyYAML==6.0.2, py-spy==0.4.0, redis==5.2.1, referencing==0.35.1, regex==2024.11.6, requests==2.32.3, requests-toolbelt==1.0.0, retry==0.9.2, rich==13.9.3, rpds-py==0.20.0, rsa==4.9, s3fs==2023.12.2, s3transfer==0.9.0, safetensors==0.5.3, scikit-learn==1.6.1, scipy==1.13.1, sentencepiece==0.2.0, sentence-transformers==4.1.0, setuptools==75.1.0, shellingham==1.5.4, six==1.16.0, smart-open==6.4.0, smmap==5.0.1, snakeviz==2.2.2, sniffio==1.3.1, snowflake-connector-python==3.14.0, sortedcontainers==2.4.0, spacy==3.8.0, spacy-curated-transformers==0.3.0, spacy-legacy==3.0.12, spacy-loggers==1.0.5, SQLAlchemy==2.0.40, srsly==2.5.1, starlette==0.46.1, streamlit==1.39.0, sympy==1.13.1, tabulate==0.9.0, tenacity==9.0.0, thinc==8.2.5, threadpoolctl==3.6.0, thrift==0.20.0, tiktoken==0.9.0, tokenizers==0.21.1, toml==0.10.2, tomlkit==0.13.2, torch==2.0.1+cu118, tornado==6.4.1, tqdm==4.66.5, transformers==4.49.0, typer==0.9.4, typing_extensions==4.12.2, typing-inspect==0.9.0, typing-inspection==0.4.0, tzdata==2024.2, uritemplate==4.1.1, urllib3==2.0.7, uvicorn==0.34.0, virtualenv==20.29.3, wasabi==1.1.3, watchdog==5.0.3, wcwidth==0.2.13, weasel==0.3.4, Werkzeug==3.1.3, wheel==0.44.0, win32_setctime==1.2.0, wrapt==1.17.2, xxhash==3.5.0, yarl==1.18.3, zstandard==0.23.0
+2025-06-16 19:17:40	DEBUG - config.utils - Ensured directories exist: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config, C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data, C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\models, C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\logs, C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\temp
+2025-06-16 19:17:40	DEBUG - config.utils - Initialized ConfigUtils
+2025-06-16 19:17:40	DEBUG - main - Validated configuration file: db_configurations.json
+2025-06-16 19:17:40	DEBUG - main - Validated configuration file: llm_config.json
+2025-06-16 19:17:40	DEBUG - main - Validated configuration file: model_config.json
+2025-06-16 19:17:40	DEBUG - main - Validated configuration file: azure_config.json
+2025-06-16 19:17:40	DEBUG - main - Validated configuration file: aws_config.json
+2025-06-16 19:17:40	DEBUG - main - Validated configuration file: synonym_config.json
+2025-06-16 19:17:40	DEBUG - main - All configuration files validated successfully
+2025-06-16 19:17:40	DEBUG - main - Starting in cli mode
+2025-06-16 19:17:40	DEBUG - main - Initializing core components
+2025-06-16 19:17:40	DEBUG - storage.db_manager - Initialized DBManager
+2025-06-16 19:17:40	DEBUG - storage.storage_manager - Initialized StorageManager
+2025-06-16 19:17:42	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:17:42	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:17:42	DEBUG - core.orchestrator - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:17:42	DEBUG - core.orchestrator - Initialized Orchestrator (version: 2025-06-14)
+2025-06-16 19:17:42	DEBUG - main - Core components initialized successfully
+2025-06-16 19:17:42	DEBUG - main - Starting CLI mode
+2025-06-16 19:17:42	DEBUG - config.utils - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:17:42	DEBUG - cli.interface - Loaded LLM config for validation
+2025-06-16 19:17:42	DEBUG - cli.interface - Initialized CLI Interface
+2025-06-16 19:17:47	DEBUG - cli.interface - Parsing command: login admin
+2025-06-16 19:17:47	DEBUG - cli.interface - Executing command: login
+2025-06-16 19:17:47	INFO - core.orchestrator - User admin logged in
+2025-06-16 19:17:47	DEBUG - core.orchestrator - Session state reset
+2025-06-16 19:17:47	INFO - cli.interface - User admin logged in
+2025-06-16 19:17:51	DEBUG - cli.interface - Parsing command: select-datasource bikestores
+2025-06-16 19:17:51	DEBUG - cli.interface - Executing command: select-datasource
+2025-06-16 19:17:51	DEBUG - config.utils - Datasource bikestores: Loaded schemas ['sales', 'production']
+2025-06-16 19:17:51	DEBUG - config.utils - Datasource bikestores_s3: Loaded schemas ['default']
+2025-06-16 19:17:51	DEBUG - config.utils - Loaded database configurations from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\db_configurations.json
+2025-06-16 19:17:51	INFO - core.orchestrator - Selected datasource bikestores with schemas ['sales', 'production']
+2025-06-16 19:17:51	DEBUG - config.utils - Datasource bikestores: Loaded schemas ['sales', 'production']
+2025-06-16 19:17:51	DEBUG - config.utils - Datasource bikestores_s3: Loaded schemas ['default']
+2025-06-16 19:17:51	DEBUG - config.utils - Loaded database configurations from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\db_configurations.json
+2025-06-16 19:17:51	DEBUG - cli.interface - Validating metadata for datasource bikestores with schemas ['sales', 'production']
+2025-06-16 19:17:51	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:17:51	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:17:51	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:17:51	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:17:51	DEBUG - core.orchestrator - Metadata valid for schema sales with 5 tables
+2025-06-16 19:17:51	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:17:51	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:17:51	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:17:51	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:17:51	DEBUG - core.orchestrator - Metadata valid for schema production with 4 tables
+2025-06-16 19:17:51	INFO - core.orchestrator - Metadata validation successful for schemas: ['sales', 'production']
+2025-06-16 19:17:51	INFO - cli.interface - Selected datasource: bikestores
+2025-06-16 19:18:00	DEBUG - cli.interface - Parsing command: query-mode
+2025-06-16 19:18:00	DEBUG - cli.interface - Executing command: query-mode
+2025-06-16 19:18:00	DEBUG - cli.interface - Entered query mode
+2025-06-16 19:18:02	DEBUG - cli.interface - Parsing command: List all customers
+2025-06-16 19:18:02	DEBUG - cli.interface - Processing NLQ in query mode: List all customers
+2025-06-16 19:18:02	DEBUG - cli.interface - No date formats specified in llm_config
+2025-06-16 19:18:02	DEBUG - cli.interface - Processing NLQ 'List all customers' for schemas ['sales', 'production']
+2025-06-16 19:18:02	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:02	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:02	DEBUG - cli.interface - Initialized NLPProcessor for NLQ: List all customers
+2025-06-16 19:18:02	DEBUG - nlp.nlp_processor - Tokenized query 'List all customers' to: ['list', 'customers']
+2025-06-16 19:18:02	DEBUG - nlp.nlp_processor - Tokenized query 'List all customers' to: ['list', 'customers']
+2025-06-16 19:18:02	DEBUG - nlp.nlp_processor - Extracted entities for query 'List all customers': {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:02	DEBUG - nlp.nlp_processor - Extracted values: {'objects': 'customers'}
+2025-06-16 19:18:02	INFO - nlp.nlp_processor - Processing metrics for query 'List all customers': {'query_length': 18, 'token_count': 2, 'entity_count': 1, 'timestamp': '2025-06-16T19:18:02.879442'}
+2025-06-16 19:18:02	DEBUG - nlp.nlp_processor - Processed query: List all customers, tokens: ['list', 'customers'], entities: {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:02	DEBUG - cli.interface - Extracted entities for NLQ: {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:02	DEBUG - tia.table_identifier - Loaded synonym mode: dynamic
+2025-06-16 19:18:02	DEBUG - tia.table_identifier - Loaded model config from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\model_config.json
+2025-06-16 19:18:02	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:02	DEBUG - tia.table_identifier - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:02	DEBUG - tia.table_identifier - Initialized TableIdentifier with model_type=azure-openai, model_name=text-embedding-3-small, embedding_deployment_name=embedding-model, synonym_mode=dynamic
+2025-06-16 19:18:02	DEBUG - proga.prompt_generator - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:18:02	DEBUG - proga.prompt_generator - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:02	DEBUG - storage.storage_manager - Initialized StorageManager
+2025-06-16 19:18:03	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:03	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:03	DEBUG - proga.prompt_generator - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:03	DEBUG - proga.prompt_generator - Initialized PromptGenerator with Azure OpenAI client
+2025-06-16 19:18:03	DEBUG - opden.data_executor - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:18:03	DEBUG - storage.storage_manager - Initialized StorageManager
+2025-06-16 19:18:03	DEBUG - storage.db_manager - Initialized DBManager
+2025-06-16 19:18:03	DEBUG - proga.prompt_generator - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:18:03	DEBUG - proga.prompt_generator - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:03	DEBUG - storage.storage_manager - Initialized StorageManager
+2025-06-16 19:18:04	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:04	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:04	DEBUG - proga.prompt_generator - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:04	DEBUG - proga.prompt_generator - Initialized PromptGenerator with Azure OpenAI client
+2025-06-16 19:18:04	DEBUG - opden.data_executor - Initialized DataExecutor
+2025-06-16 19:18:04	DEBUG - core.orchestrator - Processing NLQ 'List all customers' for schemas ['sales', 'production'], attempt 1
+2025-06-16 19:18:04	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:04	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:04	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:04	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:04	DEBUG - core.orchestrator - Metadata valid for schema sales with 5 tables
+2025-06-16 19:18:04	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:04	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:04	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:18:04	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:18:04	DEBUG - core.orchestrator - Metadata valid for schema production with 4 tables
+2025-06-16 19:18:04	INFO - core.orchestrator - Metadata validation successful for schemas: ['sales', 'production']
+2025-06-16 19:18:04	DEBUG - tia.table_identifier - Identifying tables for NLQ 'List all customers' with schemas ['sales', 'production']
+2025-06-16 19:18:04	WARNING - tia.table_identifier - Model at C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\models\model_bikestores.json has empty embeddings
+2025-06-16 19:18:04	DEBUG - tia.table_identifier - Set datasource: bikestores
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Tokenized query 'List all customers' to: ['list', 'customers']
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Tokenized query 'List all customers' to: ['list', 'customers']
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Extracted entities for query 'List all customers': {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Metadata tables for schema sales: [{'name': 'customers', 'description': '', 'columns': [{'name': 'customer_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'stores', 'description': '', 'columns': [{'name': 'store_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'store_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'staffs', 'description': '', 'columns': [{'name': 'staff_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'active', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'manager_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'orders', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'customer_id', 'type': 'int', 'description': '', 'references': {'table': 'customers', 'column': 'customer_id'}}, {'name': 'order_status', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'order_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'required_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'shipped_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'staff_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'order_items', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': {'table': 'orders', 'column': 'order_id'}}, {'name': 'item_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'product_id', 'type': 'int', 'description': '', 'references': {'table': 'production.products', 'column': 'product_id'}}, {'name': 'quantity', 'type': 'int', 'description': '', 'references': None}, {'name': 'list_price', 'type': 'decimal', 'description': '', 'references': None}, {'name': 'discount', 'type': 'decimal', 'description': '', 'references': None}]}]
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Loaded synonyms for schema sales: {'customers': ['customer', 'clients', 'users'], 'customers.customer_id': [], 'customers.first_name': [], 'customers.last_name': [], 'customers.phone': [], 'customers.email': [], 'customers.street': [], 'customers.city': [], 'customers.state': [], 'customers.zip_code': [], 'stores': ['store', 'shops'], 'stores.store_id': [], 'stores.store_name': [], 'stores.phone': [], 'stores.email': [], 'stores.street': [], 'stores.city': [], 'stores.state': [], 'stores.zip_code': [], 'staffs': ['staff', 'employees'], 'staffs.staff_id': [], 'staffs.first_name': [], 'staffs.last_name': [], 'staffs.email': [], 'staffs.phone': [], 'staffs.active': [], 'staffs.store_id': [], 'staffs.manager_id': [], 'orders': ['order', 'purchases'], 'orders.order_id': [], 'orders.customer_id': [], 'orders.order_status': [], 'orders.order_date': [], 'orders.required_date': [], 'orders.shipped_date': [], 'orders.store_id': [], 'orders.staff_id': [], 'order_items': [], 'order_items.order_id': [], 'order_items.item_id': [], 'order_items.product_id': [], 'order_items.quantity': [], 'order_items.list_price': [], 'order_items.discount': []}
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - No synonym mapping found for token 'list'
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Mapped token 'customers' to 'customers'
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Extracted values: {'objects': 'customers'}
+2025-06-16 19:18:05	INFO - nlp.nlp_processor - Processing metrics for query 'List all customers': {'query_length': 18, 'token_count': 2, 'entity_count': 1, 'timestamp': '2025-06-16T19:18:05.276565'}
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - Processed query: List all customers, tokens: ['list', 'customers'], entities: {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Fetched metadata for schemas ['sales', 'production']
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Fetched metadata for schemas ['sales']
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Loaded synonyms for schema sales: 44 entries
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Fetched metadata for schemas ['production']
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Loaded synonyms for schema production: 17 entries
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Extracted 1 conditions
+2025-06-16 19:18:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:05	DEBUG - nlp.nlp_processor - No synonym mapping found for token 'list'
+2025-06-16 19:18:05	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:05	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:06	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:06	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:06	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:07	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:08	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:08	DEBUG - tia.table_identifier - Table sales.customers scored 0.2 for token list
+2025-06-16 19:18:08	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:08	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stores...
+2025-06-16 19:18:08	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:09	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:09	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:09	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:10	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:10	DEBUG - tia.table_identifier - Table sales.stores scored 0.2 for token list
+2025-06-16 19:18:10	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:10	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=staffs...
+2025-06-16 19:18:10	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:11	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:11	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:11	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:11	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:11	DEBUG - tia.table_identifier - Table sales.staffs scored 0.2 for token list
+2025-06-16 19:18:11	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:11	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:11	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:12	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:12	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:12	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:13	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:13	DEBUG - tia.table_identifier - Table sales.orders scored 0.2 for token list
+2025-06-16 19:18:13	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:13	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=order_items...
+2025-06-16 19:18:13	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:14	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:14	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:14	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:14	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:14	DEBUG - tia.table_identifier - Table sales.order_items scored 0.2 for token list
+2025-06-16 19:18:14	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:14	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=categories...
+2025-06-16 19:18:15	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:16	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:16	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:16	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:16	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:16	DEBUG - tia.table_identifier - Table production.categories scored 0.2 for token list
+2025-06-16 19:18:16	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:16	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=brands...
+2025-06-16 19:18:17	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:17	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:17	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:17	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:18	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:18	DEBUG - tia.table_identifier - Table production.brands scored 0.2 for token list
+2025-06-16 19:18:18	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:18	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=products...
+2025-06-16 19:18:18	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:19	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:19	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:19	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:20	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:20	DEBUG - tia.table_identifier - Table production.products scored 0.2 for token list
+2025-06-16 19:18:20	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:20	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stocks...
+2025-06-16 19:18:20	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:21	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:21	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:21	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=list...
+2025-06-16 19:18:21	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:21	DEBUG - tia.table_identifier - Table production.stocks scored 0.2 for token list
+2025-06-16 19:18:21	DEBUG - nlp.nlp_processor - Mapped token 'customers' to 'customers'
+2025-06-16 19:18:21	DEBUG - tia.table_identifier - Table sales.customers scored 2.2 for token customers
+2025-06-16 19:18:21	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:21	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stores...
+2025-06-16 19:18:22	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:22	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:22	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:22	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:22	DEBUG - tia.table_identifier - Table sales.stores scored 0.2 for token customers
+2025-06-16 19:18:22	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:22	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=staffs...
+2025-06-16 19:18:22	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:22	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:22	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Table sales.staffs scored 0.2 for token customers
+2025-06-16 19:18:23	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:23	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Table sales.orders scored 0.2 for token customers
+2025-06-16 19:18:23	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:23	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=order_items...
+2025-06-16 19:18:24	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:24	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:24	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:24	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:24	DEBUG - tia.table_identifier - Table sales.order_items scored 0.2 for token customers
+2025-06-16 19:18:24	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:24	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=categories...
+2025-06-16 19:18:24	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:24	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:24	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Table production.categories scored 0.2 for token customers
+2025-06-16 19:18:25	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=brands...
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:25	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Table production.brands scored 0.2 for token customers
+2025-06-16 19:18:25	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:25	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=products...
+2025-06-16 19:18:26	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:26	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:26	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:26	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:26	DEBUG - tia.table_identifier - Table production.products scored 0.2 for token customers
+2025-06-16 19:18:26	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:26	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stocks...
+2025-06-16 19:18:26	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:26	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:26	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:27	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:27	DEBUG - tia.table_identifier - Table production.stocks scored 0.2 for token customers
+2025-06-16 19:18:27	DEBUG - tia.table_identifier - Token mappings for NLQ 'List all customers': Token: list -> Mapped: list; Token: customers -> Mapped: customers
+2025-06-16 19:18:27	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:27	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:27	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:27	DEBUG - tia.table_identifier - Fetched metadata for schemas ['sales']
+2025-06-16 19:18:27	DEBUG - tia.table_identifier - Generated DDL for tables ['customers', 'orders']
+2025-06-16 19:18:27	DEBUG - tia.table_identifier - Generated metadata-based identification for NLQ: List all customers, tables: ['sales.customers', 'sales.orders']
+2025-06-16 19:18:27	INFO - tia.table_identifier - Identification successful for NLQ: List all customers, tables: ['sales.customers', 'sales.orders']
+2025-06-16 19:18:27	DEBUG - core.orchestrator - Using tables for NLQ 'List all customers': ['sales.customers', 'sales.orders']
+2025-06-16 19:18:27	DEBUG - storage.storage_manager - Set SQL Server datasource: bikestores, no S3 initialization required
+2025-06-16 19:18:27	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:27	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:27	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:27	DEBUG - proga.prompt_generator - Fetched metadata for schema sales in datasource bikestores
+2025-06-16 19:18:27	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:27	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:18:27	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:18:27	DEBUG - proga.prompt_generator - Fetched metadata for schema production in datasource bikestores
+2025-06-16 19:18:27	DEBUG - proga.prompt_generator - Generated system prompt for schemas ['sales', 'production'], length: 9206
+2025-06-16 19:18:27	DEBUG - storage.storage_manager - Set SQL Server datasource: bikestores, no S3 initialization required
+2025-06-16 19:18:27	DEBUG - proga.prompt_generator - Generated user prompt for NLQ: List all customers, length: 808
+2025-06-16 19:18:28	DEBUG - proga.prompt_generator - Raw LLM response: ```sql
+SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    street,
+    city,
+    state,
+    zip_code
+FROM 
+    sales.customers;
+```
+2025-06-16 19:18:28	DEBUG - proga.prompt_generator - Extracted SQL from response: SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    street,
+    city,
+    state,
+    zip_code
+FROM 
+    sales.customers;
+2025-06-16 19:18:28	INFO - proga.prompt_generator - Generated SQL query for schemas ['sales', 'production']: SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    street,
+    city,
+    state,
+    zip_code
+FROM 
+    sales.customers;
+2025-06-16 19:18:28	DEBUG - storage.storage_manager - Set SQL Server datasource: bikestores, no S3 initialization required
+2025-06-16 19:18:30	DEBUG - proga.prompt_generator - Raw LLM response: ```sql
+SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    street,
+    city,
+    state,
+    zip_code
+FROM 
+    sales.customers;
+```
+2025-06-16 19:18:30	DEBUG - proga.prompt_generator - Extracted SQL from response: SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    street,
+    city,
+    state,
+    zip_code
+FROM 
+    sales.customers;
+2025-06-16 19:18:30	INFO - proga.prompt_generator - Generated SQL query for schemas ['sales', 'production']: SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    street,
+    city,
+    state,
+    zip_code
+FROM 
+    sales.customers;
+2025-06-16 19:18:30	DEBUG - opden.data_executor - Validated SQL query: SELECT 
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    street,
+    city,
+...
+2025-06-16 19:18:30	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:30	DEBUG - storage.db_manager - Set datasource: bikestores
+2025-06-16 19:18:31	INFO - storage.db_manager - Executed query on bikestores, returned 1445 rows
+2025-06-16 19:18:31	INFO - opden.data_executor - Generated output for NLQ 'List all customers' in schema sales: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\temp\query_results\output_sales_20250616_191831_list_all_customers.csv, rows: 1445
+2025-06-16 19:18:31	DEBUG - opden.data_executor - Query execution completed for NLQ 'List all customers', schemas ['sales', 'production'], result rows: 5
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - core.orchestrator - Accessing database at C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\datascriber.db
+2025-06-16 19:18:31	DEBUG - core.orchestrator - Generated next scenario_id: SCN_000011 for datasource bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - proga.prompt_generator - Fetched metadata for schema sales in datasource bikestores
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Tokenized query 'list all customers' to: ['list', 'customers']
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Tokenized query 'list all customers' to: ['list', 'customers']
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Extracted entities for query 'list all customers': {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Metadata tables for schema sales: [{'name': 'customers', 'description': '', 'columns': [{'name': 'customer_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'stores', 'description': '', 'columns': [{'name': 'store_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'store_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'staffs', 'description': '', 'columns': [{'name': 'staff_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'active', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'manager_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'orders', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'customer_id', 'type': 'int', 'description': '', 'references': {'table': 'customers', 'column': 'customer_id'}}, {'name': 'order_status', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'order_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'required_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'shipped_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'staff_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'order_items', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': {'table': 'orders', 'column': 'order_id'}}, {'name': 'item_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'product_id', 'type': 'int', 'description': '', 'references': {'table': 'production.products', 'column': 'product_id'}}, {'name': 'quantity', 'type': 'int', 'description': '', 'references': None}, {'name': 'list_price', 'type': 'decimal', 'description': '', 'references': None}, {'name': 'discount', 'type': 'decimal', 'description': '', 'references': None}]}]
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Loaded synonyms for schema sales: {'customers': ['customer', 'clients', 'users'], 'customers.customer_id': [], 'customers.first_name': [], 'customers.last_name': [], 'customers.phone': [], 'customers.email': [], 'customers.street': [], 'customers.city': [], 'customers.state': [], 'customers.zip_code': [], 'stores': ['store', 'shops'], 'stores.store_id': [], 'stores.store_name': [], 'stores.phone': [], 'stores.email': [], 'stores.street': [], 'stores.city': [], 'stores.state': [], 'stores.zip_code': [], 'staffs': ['staff', 'employees'], 'staffs.staff_id': [], 'staffs.first_name': [], 'staffs.last_name': [], 'staffs.email': [], 'staffs.phone': [], 'staffs.active': [], 'staffs.store_id': [], 'staffs.manager_id': [], 'orders': ['order', 'purchases'], 'orders.order_id': [], 'orders.customer_id': [], 'orders.order_status': [], 'orders.order_date': [], 'orders.required_date': [], 'orders.shipped_date': [], 'orders.store_id': [], 'orders.staff_id': [], 'order_items': [], 'order_items.order_id': [], 'order_items.item_id': [], 'order_items.product_id': [], 'order_items.quantity': [], 'order_items.list_price': [], 'order_items.discount': []}
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - No synonym mapping found for token 'list'
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Mapped token 'customers' to 'customers'
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Extracted values: {'objects': 'customers'}
+2025-06-16 19:18:31	INFO - nlp.nlp_processor - Processing metrics for query 'list all customers': {'query_length': 18, 'token_count': 2, 'entity_count': 1, 'timestamp': '2025-06-16T19:18:31.843971'}
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Processed query: list all customers, tokens: ['list', 'customers'], entities: {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:31	DEBUG - proga.prompt_generator - Identified related tables for NLQ 'List all customers': ['sales.customers']
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Tokenized query 'list all customers' to: ['list', 'customers']
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Tokenized query 'list all customers' to: ['list', 'customers']
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Extracted entities for query 'list all customers': {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Metadata tables for schema sales: [{'name': 'customers', 'description': '', 'columns': [{'name': 'customer_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'stores', 'description': '', 'columns': [{'name': 'store_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'store_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'staffs', 'description': '', 'columns': [{'name': 'staff_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'active', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'manager_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'orders', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'customer_id', 'type': 'int', 'description': '', 'references': {'table': 'customers', 'column': 'customer_id'}}, {'name': 'order_status', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'order_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'required_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'shipped_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'staff_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'order_items', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': {'table': 'orders', 'column': 'order_id'}}, {'name': 'item_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'product_id', 'type': 'int', 'description': '', 'references': {'table': 'production.products', 'column': 'product_id'}}, {'name': 'quantity', 'type': 'int', 'description': '', 'references': None}, {'name': 'list_price', 'type': 'decimal', 'description': '', 'references': None}, {'name': 'discount', 'type': 'decimal', 'description': '', 'references': None}]}]
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Loaded synonyms for schema sales: {'customers': ['customer', 'clients', 'users'], 'customers.customer_id': [], 'customers.first_name': [], 'customers.last_name': [], 'customers.phone': [], 'customers.email': [], 'customers.street': [], 'customers.city': [], 'customers.state': [], 'customers.zip_code': [], 'stores': ['store', 'shops'], 'stores.store_id': [], 'stores.store_name': [], 'stores.phone': [], 'stores.email': [], 'stores.street': [], 'stores.city': [], 'stores.state': [], 'stores.zip_code': [], 'staffs': ['staff', 'employees'], 'staffs.staff_id': [], 'staffs.first_name': [], 'staffs.last_name': [], 'staffs.email': [], 'staffs.phone': [], 'staffs.active': [], 'staffs.store_id': [], 'staffs.manager_id': [], 'orders': ['order', 'purchases'], 'orders.order_id': [], 'orders.customer_id': [], 'orders.order_status': [], 'orders.order_date': [], 'orders.required_date': [], 'orders.shipped_date': [], 'orders.store_id': [], 'orders.staff_id': [], 'order_items': [], 'order_items.order_id': [], 'order_items.item_id': [], 'order_items.product_id': [], 'order_items.quantity': [], 'order_items.list_price': [], 'order_items.discount': []}
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - No synonym mapping found for token 'list'
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Mapped token 'customers' to 'customers'
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Extracted values: {'objects': 'customers'}
+2025-06-16 19:18:31	INFO - nlp.nlp_processor - Processing metrics for query 'list all customers': {'query_length': 18, 'token_count': 2, 'entity_count': 1, 'timestamp': '2025-06-16T19:18:31.886781'}
+2025-06-16 19:18:31	DEBUG - nlp.nlp_processor - Processed query: list all customers, tokens: ['list', 'customers'], entities: {'common': [], 'dates': [], 'names': [], 'objects': ['customers'], 'places': []}
+2025-06-16 19:18:31	DEBUG - proga.prompt_generator - Identified specific columns for NLQ 'List all customers': ['list_price']
+2025-06-16 19:18:31	DEBUG - proga.prompt_generator - Generated 0 placeholders
+2025-06-16 19:18:31	DEBUG - proga.prompt_generator - Built context for schema sales: Objects detected: customers; Predicted tables: sales.customers, sales.orders; Use schema sales from datasource bikestores; DDL available for predicted tables
+2025-06-16 19:18:31	DEBUG - proga.prompt_generator - Generated training data row for NLQ: List all customers, schema: sales, scenario_id: SCN_000011
+2025-06-16 19:18:31	DEBUG - storage.db_manager - Initialized DBManager
+2025-06-16 19:18:31	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:31	DEBUG - storage.db_manager - Set datasource: bikestores
+2025-06-16 19:18:31	INFO - storage.db_manager - Created SQLite tables in C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\datascriber.db
+2025-06-16 19:18:31	DEBUG - storage.db_manager - Current rejected_queries columns: ['id', 'user_query', 'timestamp', 'reason', 'user', 'datasource', 'schema', 'error_type']
+2025-06-16 19:18:31	DEBUG - storage.db_manager - SQLite schema migration completed
+2025-06-16 19:18:31	DEBUG - storage.db_manager - Initialized SQLite connection to: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\datascriber.db
+2025-06-16 19:18:31	DEBUG - config.utils - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:18:31	INFO - storage.db_manager - Stored 1 training data entries for bikestores (inserted: 0, updated: 1)
+2025-06-16 19:18:31	INFO - proga.prompt_generator - Saved 1 training rows for datasource bikestores
+2025-06-16 19:18:31	INFO - core.orchestrator - Processed NLQ: List all customers, saved training data with scenario_id: SCN_000011
+2025-06-16 19:18:31	INFO - cli.interface - Query processed successfully: List all customers
+2025-06-16 19:18:31	DEBUG - cli.interface - Formatting 5 rows as table
+2025-06-16 19:18:31	INFO - cli.interface - Query results saved to: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\temp\query_results\output_sales_20250616_191831_list_all_customers.csv
+2025-06-16 19:18:36	DEBUG - cli.interface - Parsing command: Show orders from 2016
+2025-06-16 19:18:36	DEBUG - cli.interface - Processing NLQ in query mode: Show orders from 2016
+2025-06-16 19:18:36	DEBUG - cli.interface - No date formats specified in llm_config
+2025-06-16 19:18:36	DEBUG - cli.interface - Processing NLQ 'Show orders from 2016' for schemas ['sales', 'production']
+2025-06-16 19:18:36	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:36	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:36	DEBUG - cli.interface - Initialized NLPProcessor for NLQ: Show orders from 2016
+2025-06-16 19:18:36	DEBUG - nlp.nlp_processor - Tokenized query 'Show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:18:36	DEBUG - nlp.nlp_processor - Tokenized query 'Show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:18:36	DEBUG - nlp.nlp_processor - Extracted entities for query 'Show orders from 2016': {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:18:36	DEBUG - nlp.nlp_processor - Extracted values: {'dates_year': '2016', 'objects': 'orders'}
+2025-06-16 19:18:36	INFO - nlp.nlp_processor - Processing metrics for query 'Show orders from 2016': {'query_length': 21, 'token_count': 2, 'entity_count': 2, 'timestamp': '2025-06-16T19:18:36.742069'}
+2025-06-16 19:18:36	DEBUG - nlp.nlp_processor - Processed query: Show orders from 2016, tokens: ['orders', '2016'], entities: {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:18:36	DEBUG - cli.interface - Extracted entities for NLQ: {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:18:36	DEBUG - tia.table_identifier - Loaded synonym mode: dynamic
+2025-06-16 19:18:36	DEBUG - tia.table_identifier - Loaded model config from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\model_config.json
+2025-06-16 19:18:36	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:36	DEBUG - tia.table_identifier - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:36	DEBUG - tia.table_identifier - Initialized TableIdentifier with model_type=azure-openai, model_name=text-embedding-3-small, embedding_deployment_name=embedding-model, synonym_mode=dynamic
+2025-06-16 19:18:36	DEBUG - proga.prompt_generator - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:18:36	DEBUG - proga.prompt_generator - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:36	DEBUG - storage.storage_manager - Initialized StorageManager
+2025-06-16 19:18:37	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:37	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:37	DEBUG - proga.prompt_generator - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:37	DEBUG - proga.prompt_generator - Initialized PromptGenerator with Azure OpenAI client
+2025-06-16 19:18:37	DEBUG - opden.data_executor - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:18:37	DEBUG - storage.storage_manager - Initialized StorageManager
+2025-06-16 19:18:37	DEBUG - storage.db_manager - Initialized DBManager
+2025-06-16 19:18:37	DEBUG - proga.prompt_generator - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:18:37	DEBUG - proga.prompt_generator - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:37	DEBUG - storage.storage_manager - Initialized StorageManager
+2025-06-16 19:18:38	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:38	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:38	DEBUG - proga.prompt_generator - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:38	DEBUG - proga.prompt_generator - Initialized PromptGenerator with Azure OpenAI client
+2025-06-16 19:18:38	DEBUG - opden.data_executor - Initialized DataExecutor
+2025-06-16 19:18:38	DEBUG - core.orchestrator - Processing NLQ 'Show orders from 2016' for schemas ['sales', 'production'], attempt 1
+2025-06-16 19:18:38	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:38	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:38	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:38	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:38	DEBUG - core.orchestrator - Metadata valid for schema sales with 5 tables
+2025-06-16 19:18:38	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:38	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:38	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:18:38	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:18:38	DEBUG - core.orchestrator - Metadata valid for schema production with 4 tables
+2025-06-16 19:18:38	INFO - core.orchestrator - Metadata validation successful for schemas: ['sales', 'production']
+2025-06-16 19:18:38	DEBUG - tia.table_identifier - Identifying tables for NLQ 'Show orders from 2016' with schemas ['sales', 'production']
+2025-06-16 19:18:38	WARNING - tia.table_identifier - Model at C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\models\model_bikestores.json has empty embeddings
+2025-06-16 19:18:38	DEBUG - tia.table_identifier - Set datasource: bikestores
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Loaded default mappings from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\default_mappings.json
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Initialized NLPProcessor with spaCy model en_core_web_sm
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Tokenized query 'Show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Tokenized query 'Show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Extracted entities for query 'Show orders from 2016': {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Metadata tables for schema sales: [{'name': 'customers', 'description': '', 'columns': [{'name': 'customer_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'stores', 'description': '', 'columns': [{'name': 'store_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'store_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'staffs', 'description': '', 'columns': [{'name': 'staff_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'active', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'manager_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'orders', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'customer_id', 'type': 'int', 'description': '', 'references': {'table': 'customers', 'column': 'customer_id'}}, {'name': 'order_status', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'order_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'required_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'shipped_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'staff_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'order_items', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': {'table': 'orders', 'column': 'order_id'}}, {'name': 'item_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'product_id', 'type': 'int', 'description': '', 'references': {'table': 'production.products', 'column': 'product_id'}}, {'name': 'quantity', 'type': 'int', 'description': '', 'references': None}, {'name': 'list_price', 'type': 'decimal', 'description': '', 'references': None}, {'name': 'discount', 'type': 'decimal', 'description': '', 'references': None}]}]
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Loaded synonyms for schema sales: {'customers': ['customer', 'clients', 'users'], 'customers.customer_id': [], 'customers.first_name': [], 'customers.last_name': [], 'customers.phone': [], 'customers.email': [], 'customers.street': [], 'customers.city': [], 'customers.state': [], 'customers.zip_code': [], 'stores': ['store', 'shops'], 'stores.store_id': [], 'stores.store_name': [], 'stores.phone': [], 'stores.email': [], 'stores.street': [], 'stores.city': [], 'stores.state': [], 'stores.zip_code': [], 'staffs': ['staff', 'employees'], 'staffs.staff_id': [], 'staffs.first_name': [], 'staffs.last_name': [], 'staffs.email': [], 'staffs.phone': [], 'staffs.active': [], 'staffs.store_id': [], 'staffs.manager_id': [], 'orders': ['order', 'purchases'], 'orders.order_id': [], 'orders.customer_id': [], 'orders.order_status': [], 'orders.order_date': [], 'orders.required_date': [], 'orders.shipped_date': [], 'orders.store_id': [], 'orders.staff_id': [], 'order_items': [], 'order_items.order_id': [], 'order_items.item_id': [], 'order_items.product_id': [], 'order_items.quantity': [], 'order_items.list_price': [], 'order_items.discount': []}
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Mapped token 'orders' to 'orders'
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - No synonym mapping found for token '2016'
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Extracted values: {'dates_year': '2016', 'objects': 'orders'}
+2025-06-16 19:18:39	INFO - nlp.nlp_processor - Processing metrics for query 'Show orders from 2016': {'query_length': 21, 'token_count': 2, 'entity_count': 2, 'timestamp': '2025-06-16T19:18:39.174993'}
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Processed query: Show orders from 2016, tokens: ['orders', '2016'], entities: {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Fetched metadata for schemas ['sales', 'production']
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Fetched metadata for schemas ['sales']
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Loaded synonyms for schema sales: 44 entries
+2025-06-16 19:18:39	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:39	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Fetched metadata for schemas ['production']
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Loaded synonyms for schema production: 17 entries
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Extracted 2 conditions
+2025-06-16 19:18:39	DEBUG - nlp.nlp_processor - Mapped token 'orders' to 'orders'
+2025-06-16 19:18:39	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:39	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:40	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:40	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:40	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:40	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:41	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:41	DEBUG - tia.table_identifier - Table sales.customers scored 0.2 for token orders
+2025-06-16 19:18:41	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:41	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stores...
+2025-06-16 19:18:42	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:43	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:43	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:43	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:43	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:43	DEBUG - tia.table_identifier - Table sales.stores scored 0.2 for token orders
+2025-06-16 19:18:43	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:43	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=staffs...
+2025-06-16 19:18:43	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:44	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:44	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:44	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:45	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:45	DEBUG - tia.table_identifier - Table sales.staffs scored 0.2 for token orders
+2025-06-16 19:18:45	DEBUG - tia.table_identifier - Table sales.orders scored 2.2 for token orders
+2025-06-16 19:18:45	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:45	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=order_items...
+2025-06-16 19:18:45	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:46	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:46	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:46	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:46	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:46	DEBUG - tia.table_identifier - Table sales.order_items scored 0.2 for token orders
+2025-06-16 19:18:46	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:46	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=categories...
+2025-06-16 19:18:47	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:48	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:48	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:48	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:48	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:48	DEBUG - tia.table_identifier - Table production.categories scored 0.2 for token orders
+2025-06-16 19:18:48	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:48	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=brands...
+2025-06-16 19:18:48	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:49	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:49	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:49	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:50	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:50	DEBUG - tia.table_identifier - Table production.brands scored 0.2 for token orders
+2025-06-16 19:18:50	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:50	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=products...
+2025-06-16 19:18:50	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:51	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:51	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:51	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:51	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:51	DEBUG - tia.table_identifier - Table production.products scored 0.2 for token orders
+2025-06-16 19:18:51	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:51	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stocks...
+2025-06-16 19:18:52	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:53	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:53	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:53	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:53	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:53	DEBUG - tia.table_identifier - Table production.stocks scored 0.2 for token orders
+2025-06-16 19:18:53	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:18:53	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:18:53	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:18:53	DEBUG - nlp.nlp_processor - No synonym mapping found for token '2016'
+2025-06-16 19:18:53	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:53	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=customers...
+2025-06-16 19:18:53	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:53	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:53	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:54	DEBUG - tia.table_identifier - Calling embeddings.create with model=embedding-model for 1 texts
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Table sales.customers scored 0.2 for token 2016
+2025-06-16 19:18:55	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stores...
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:55	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Table sales.stores scored 0.1647215373805914 for token 2016
+2025-06-16 19:18:55	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:55	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=staffs...
+2025-06-16 19:18:56	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:56	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:56	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:56	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:56	DEBUG - tia.table_identifier - Table sales.staffs scored 0.18447243641779787 for token 2016
+2025-06-16 19:18:56	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:56	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=orders...
+2025-06-16 19:18:56	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:56	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:56	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Table sales.orders scored 0.18586367839411275 for token 2016
+2025-06-16 19:18:57	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=order_items...
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:57	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Table sales.order_items scored 0.1440573928021331 for token 2016
+2025-06-16 19:18:57	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:57	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=categories...
+2025-06-16 19:18:58	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:58	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:58	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:58	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:58	DEBUG - tia.table_identifier - Table production.categories scored 0.2 for token 2016
+2025-06-16 19:18:58	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:58	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=brands...
+2025-06-16 19:18:58	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:58	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:58	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Table production.brands scored 0.2 for token 2016
+2025-06-16 19:18:59	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=products...
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:59	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Table production.products scored 0.2 for token 2016
+2025-06-16 19:18:59	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:18:59	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=stocks...
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:19:00	DEBUG - config.utils - Loaded Azure configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\azure_config.json
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Encoding query with azure_endpoint=https://prasa-mbkq18is-eastus2.cognitiveservices.azure.com/, deployment=embedding-model, api_version=2024-12-01-preview, input=2016...
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Encoded 1 queries using deployment embedding-model
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Table production.stocks scored 0.2 for token 2016
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Token mappings for NLQ 'Show orders from 2016': Token: orders -> Mapped: orders; Token: 2016 -> Mapped: 2016
+2025-06-16 19:19:00	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:00	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:00	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Fetched metadata for schemas ['sales']
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Generated DDL for tables ['orders', 'order_items']
+2025-06-16 19:19:00	DEBUG - tia.table_identifier - Generated metadata-based identification for NLQ: Show orders from 2016, tables: ['sales.orders', 'sales.order_items']
+2025-06-16 19:19:00	INFO - tia.table_identifier - Identification successful for NLQ: Show orders from 2016, tables: ['sales.orders', 'sales.order_items']
+2025-06-16 19:19:00	DEBUG - core.orchestrator - Using tables for NLQ 'Show orders from 2016': ['sales.orders', 'sales.order_items']
+2025-06-16 19:19:00	DEBUG - storage.storage_manager - Set SQL Server datasource: bikestores, no S3 initialization required
+2025-06-16 19:19:00	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:00	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:00	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:00	DEBUG - proga.prompt_generator - Fetched metadata for schema sales in datasource bikestores
+2025-06-16 19:19:00	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:00	DEBUG - config.utils - Loading metadata for schema production from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_production.json
+2025-06-16 19:19:00	DEBUG - config.utils - Loaded metadata for schema production
+2025-06-16 19:19:00	DEBUG - proga.prompt_generator - Fetched metadata for schema production in datasource bikestores
+2025-06-16 19:19:00	DEBUG - proga.prompt_generator - Generated system prompt for schemas ['sales', 'production'], length: 9206
+2025-06-16 19:19:00	DEBUG - storage.storage_manager - Set SQL Server datasource: bikestores, no S3 initialization required
+2025-06-16 19:19:00	DEBUG - proga.prompt_generator - Generated user prompt for NLQ: Show orders from 2016, length: 712
+2025-06-16 19:19:03	DEBUG - proga.prompt_generator - Raw LLM response: ```sql
+SELECT 
+    o.order_id,
+    o.customer_id,
+    o.order_status,
+    o.order_date,
+    o.required_date,
+    o.shipped_date,
+    o.store_id,
+    o.staff_id
+FROM 
+    sales.orders AS o
+WHERE 
+    YEAR(o.order_date) = 2016;
+```
+2025-06-16 19:19:03	DEBUG - proga.prompt_generator - Extracted SQL from response: SELECT 
+    o.order_id,
+    o.customer_id,
+    o.order_status,
+    o.order_date,
+    o.required_date,
+    o.shipped_date,
+    o.store_id,
+    o.staff_id
+FROM 
+    sales.orders AS o
+WHERE 
+    YEAR(o.order_date) = 2016;
+2025-06-16 19:19:03	INFO - proga.prompt_generator - Generated SQL query for schemas ['sales', 'production']: SELECT 
+    o.order_id,
+    o.customer_id,
+    o.order_status,
+    o.order_date,
+    o.required_date,
+    o.shipped_date,
+    o.store_id,
+    o.staff_id
+FROM 
+    sales.orders AS o
+WHERE 
+    YEAR(o.order_date) = 2016;
+2025-06-16 19:19:03	DEBUG - storage.storage_manager - Set SQL Server datasource: bikestores, no S3 initialization required
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Raw LLM response: ```sql
+SELECT 
+    o.order_id,
+    o.customer_id,
+    o.order_status,
+    o.order_date,
+    o.required_date,
+    o.shipped_date,
+    o.store_id,
+    o.staff_id
+FROM 
+    sales.orders AS o
+WHERE 
+    YEAR(o.order_date) = 2016;
+```
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Extracted SQL from response: SELECT 
+    o.order_id,
+    o.customer_id,
+    o.order_status,
+    o.order_date,
+    o.required_date,
+    o.shipped_date,
+    o.store_id,
+    o.staff_id
+FROM 
+    sales.orders AS o
+WHERE 
+    YEAR(o.order_date) = 2016;
+2025-06-16 19:19:05	INFO - proga.prompt_generator - Generated SQL query for schemas ['sales', 'production']: SELECT 
+    o.order_id,
+    o.customer_id,
+    o.order_status,
+    o.order_date,
+    o.required_date,
+    o.shipped_date,
+    o.store_id,
+    o.staff_id
+FROM 
+    sales.orders AS o
+WHERE 
+    YEAR(o.order_date) = 2016;
+2025-06-16 19:19:05	DEBUG - opden.data_executor - Validated SQL query: SELECT 
+    o.order_id,
+    o.customer_id,
+    o.order_status,
+    o.order_date,
+    o.required_date...
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - storage.db_manager - Set datasource: bikestores
+2025-06-16 19:19:05	INFO - storage.db_manager - Executed query on bikestores, returned 635 rows
+2025-06-16 19:19:05	INFO - opden.data_executor - Generated output for NLQ 'Show orders from 2016' in schema sales: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\temp\query_results\output_sales_20250616_191905_show_orders_from_2016.csv, rows: 635
+2025-06-16 19:19:05	DEBUG - opden.data_executor - Query execution completed for NLQ 'Show orders from 2016', schemas ['sales', 'production'], result rows: 5
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - core.orchestrator - Accessing database at C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\datascriber.db
+2025-06-16 19:19:05	DEBUG - core.orchestrator - Generated next scenario_id: SCN_000012 for datasource bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Fetched metadata for schema sales in datasource bikestores
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Tokenized query 'show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Tokenized query 'show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Extracted entities for query 'show orders from 2016': {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Metadata tables for schema sales: [{'name': 'customers', 'description': '', 'columns': [{'name': 'customer_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'stores', 'description': '', 'columns': [{'name': 'store_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'store_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'staffs', 'description': '', 'columns': [{'name': 'staff_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'active', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'manager_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'orders', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'customer_id', 'type': 'int', 'description': '', 'references': {'table': 'customers', 'column': 'customer_id'}}, {'name': 'order_status', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'order_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'required_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'shipped_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'staff_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'order_items', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': {'table': 'orders', 'column': 'order_id'}}, {'name': 'item_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'product_id', 'type': 'int', 'description': '', 'references': {'table': 'production.products', 'column': 'product_id'}}, {'name': 'quantity', 'type': 'int', 'description': '', 'references': None}, {'name': 'list_price', 'type': 'decimal', 'description': '', 'references': None}, {'name': 'discount', 'type': 'decimal', 'description': '', 'references': None}]}]
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Loaded synonyms for schema sales: {'customers': ['customer', 'clients', 'users'], 'customers.customer_id': [], 'customers.first_name': [], 'customers.last_name': [], 'customers.phone': [], 'customers.email': [], 'customers.street': [], 'customers.city': [], 'customers.state': [], 'customers.zip_code': [], 'stores': ['store', 'shops'], 'stores.store_id': [], 'stores.store_name': [], 'stores.phone': [], 'stores.email': [], 'stores.street': [], 'stores.city': [], 'stores.state': [], 'stores.zip_code': [], 'staffs': ['staff', 'employees'], 'staffs.staff_id': [], 'staffs.first_name': [], 'staffs.last_name': [], 'staffs.email': [], 'staffs.phone': [], 'staffs.active': [], 'staffs.store_id': [], 'staffs.manager_id': [], 'orders': ['order', 'purchases'], 'orders.order_id': [], 'orders.customer_id': [], 'orders.order_status': [], 'orders.order_date': [], 'orders.required_date': [], 'orders.shipped_date': [], 'orders.store_id': [], 'orders.staff_id': [], 'order_items': [], 'order_items.order_id': [], 'order_items.item_id': [], 'order_items.product_id': [], 'order_items.quantity': [], 'order_items.list_price': [], 'order_items.discount': []}
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Mapped token 'orders' to 'orders'
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - No synonym mapping found for token '2016'
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Extracted values: {'dates_year': '2016', 'objects': 'orders'}
+2025-06-16 19:19:05	INFO - nlp.nlp_processor - Processing metrics for query 'show orders from 2016': {'query_length': 21, 'token_count': 2, 'entity_count': 2, 'timestamp': '2025-06-16T19:19:05.375449'}
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Processed query: show orders from 2016, tokens: ['orders', '2016'], entities: {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Identified related tables for NLQ 'Show orders from 2016': ['sales.orders']
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Tokenized query 'show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Tokenized query 'show orders from 2016' to: ['orders', '2016']
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Extracted entities for query 'show orders from 2016': {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Metadata tables for schema sales: [{'name': 'customers', 'description': '', 'columns': [{'name': 'customer_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'stores', 'description': '', 'columns': [{'name': 'store_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'store_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'street', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'city', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'state', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'zip_code', 'type': 'varchar', 'description': '', 'references': None}]}, {'name': 'staffs', 'description': '', 'columns': [{'name': 'staff_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'first_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'last_name', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'email', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'phone', 'type': 'varchar', 'description': '', 'references': None}, {'name': 'active', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'manager_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'orders', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'customer_id', 'type': 'int', 'description': '', 'references': {'table': 'customers', 'column': 'customer_id'}}, {'name': 'order_status', 'type': 'tinyint', 'description': '', 'references': None}, {'name': 'order_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'required_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'shipped_date', 'type': 'date', 'description': '', 'references': None}, {'name': 'store_id', 'type': 'int', 'description': '', 'references': {'table': 'stores', 'column': 'store_id'}}, {'name': 'staff_id', 'type': 'int', 'description': '', 'references': {'table': 'staffs', 'column': 'staff_id'}}]}, {'name': 'order_items', 'description': '', 'columns': [{'name': 'order_id', 'type': 'int', 'description': '', 'references': {'table': 'orders', 'column': 'order_id'}}, {'name': 'item_id', 'type': 'int', 'description': '', 'references': None}, {'name': 'product_id', 'type': 'int', 'description': '', 'references': {'table': 'production.products', 'column': 'product_id'}}, {'name': 'quantity', 'type': 'int', 'description': '', 'references': None}, {'name': 'list_price', 'type': 'decimal', 'description': '', 'references': None}, {'name': 'discount', 'type': 'decimal', 'description': '', 'references': None}]}]
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Loaded synonyms for schema sales: {'customers': ['customer', 'clients', 'users'], 'customers.customer_id': [], 'customers.first_name': [], 'customers.last_name': [], 'customers.phone': [], 'customers.email': [], 'customers.street': [], 'customers.city': [], 'customers.state': [], 'customers.zip_code': [], 'stores': ['store', 'shops'], 'stores.store_id': [], 'stores.store_name': [], 'stores.phone': [], 'stores.email': [], 'stores.street': [], 'stores.city': [], 'stores.state': [], 'stores.zip_code': [], 'staffs': ['staff', 'employees'], 'staffs.staff_id': [], 'staffs.first_name': [], 'staffs.last_name': [], 'staffs.email': [], 'staffs.phone': [], 'staffs.active': [], 'staffs.store_id': [], 'staffs.manager_id': [], 'orders': ['order', 'purchases'], 'orders.order_id': [], 'orders.customer_id': [], 'orders.order_status': [], 'orders.order_date': [], 'orders.required_date': [], 'orders.shipped_date': [], 'orders.store_id': [], 'orders.staff_id': [], 'order_items': [], 'order_items.order_id': [], 'order_items.item_id': [], 'order_items.product_id': [], 'order_items.quantity': [], 'order_items.list_price': [], 'order_items.discount': []}
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Mapped token 'orders' to 'orders'
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - config.utils - Loading metadata for schema sales from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\metadata_data_sales.json
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded metadata for schema sales
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - No synonym mapping found for token '2016'
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Extracted values: {'dates_year': '2016', 'objects': 'orders'}
+2025-06-16 19:19:05	INFO - nlp.nlp_processor - Processing metrics for query 'show orders from 2016': {'query_length': 21, 'token_count': 2, 'entity_count': 2, 'timestamp': '2025-06-16T19:19:05.420656'}
+2025-06-16 19:19:05	DEBUG - nlp.nlp_processor - Processed query: show orders from 2016, tokens: ['orders', '2016'], entities: {'common': [], 'dates': ['2016'], 'names': [], 'objects': ['orders'], 'places': []}
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Identified specific columns for NLQ 'Show orders from 2016': ['customer_id', 'first_name']
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Generated 0 placeholders
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Built context for schema sales: Dates detected: 2016; Objects detected: orders; Predicted tables: sales.orders, sales.order_items; Use schema sales from datasource bikestores; DDL available for predicted tables
+2025-06-16 19:19:05	DEBUG - proga.prompt_generator - Generated training data row for NLQ: Show orders from 2016, schema: sales, scenario_id: SCN_000012
+2025-06-16 19:19:05	DEBUG - storage.db_manager - Initialized DBManager
+2025-06-16 19:19:05	DEBUG - config.utils - Ensured datasource directory exists: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores
+2025-06-16 19:19:05	DEBUG - storage.db_manager - Set datasource: bikestores
+2025-06-16 19:19:05	INFO - storage.db_manager - Created SQLite tables in C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\datascriber.db
+2025-06-16 19:19:05	DEBUG - storage.db_manager - Current rejected_queries columns: ['id', 'user_query', 'timestamp', 'reason', 'user', 'datasource', 'schema', 'error_type']
+2025-06-16 19:19:05	DEBUG - storage.db_manager - SQLite schema migration completed
+2025-06-16 19:19:05	DEBUG - storage.db_manager - Initialized SQLite connection to: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\data\bikestores\datascriber.db
+2025-06-16 19:19:05	DEBUG - config.utils - Loaded LLM configuration from C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\app-config\llm_config.json
+2025-06-16 19:19:05	INFO - storage.db_manager - Stored 1 training data entries for bikestores (inserted: 0, updated: 1)
+2025-06-16 19:19:05	INFO - proga.prompt_generator - Saved 1 training rows for datasource bikestores
+2025-06-16 19:19:05	INFO - core.orchestrator - Processed NLQ: Show orders from 2016, saved training data with scenario_id: SCN_000012
+2025-06-16 19:19:05	INFO - cli.interface - Query processed successfully: Show orders from 2016
+2025-06-16 19:19:05	DEBUG - cli.interface - Formatting 5 rows as table
+2025-06-16 19:19:05	INFO - cli.interface - Query results saved to: C:\Users\varaprasad\Pythonworks\Text2SQl\Datascriber\temp\query_results\output_sales_20250616_191905_show_orders_from_2016.csv
+2025-06-16 19:19:07	INFO - cli.interface - User interrupted query mode
+2025-06-16 19:19:08	INFO - cli.interface - User interrupted CLI
+2025-06-16 19:19:08	DEBUG - storage.db_manager - Closed all SQL Server connections
+2025-06-16 19:19:08	DEBUG - main - Closed database connections
+2025-06-16 19:19:08	DEBUG - storage.storage_manager - Cleared table cache
+2025-06-16 19:19:08	DEBUG - main - Cleared storage cache
+2025-06-16 19:19:08	DEBUG - main - Resource cleanup completed successfully
+2025-06-16 19:19:08	INFO - main - Datascriber shutdown complete

@@ -128,6 +128,37 @@ class PromptGenerator:
             self.logger.error(f"Failed to parse default_mappings.json: {str(e)}\n{traceback.format_exc()}")
             return {}
 
+    def _get_s3_table_path(self, datasource: Dict, schema: str, table: str) -> str:
+        """Get the S3 path for a table using StorageManager.
+
+        Args:
+            datasource (Dict): Datasource configuration.
+            schema (str): Schema name.
+            table (str): Table name.
+
+        Returns:
+            str: S3 path (e.g., s3://bike-stores-bucket/data-files/customers.csv).
+
+        Raises:
+            PromptError: If path generation fails.
+        """
+        try:
+            self.storage_manager._set_datasource(datasource)
+            prefix = datasource["connection"].get("database", "")
+            file_type = self.storage_manager.file_type or "csv"
+            part_files = self.storage_manager._get_table_part_files(table, f"{prefix}/")
+            if not part_files:
+                self.logger.warning(f"No part files found for table {table} in schema {schema}")
+                raise PromptError(f"No part files found for table {table}")
+            s3_path = f"s3://{datasource['connection']['bucket_name']}/{prefix}/{part_files[0]}"
+            self.logger.debug(f"Generated S3 path for table {table} in schema {schema}: {s3_path}")
+            if self.enable_component_logging:
+                print(f"Component Output: Generated S3 path for table {table}: {s3_path}")
+            return s3_path
+        except Exception as e:
+            self.logger.error(f"Failed to generate S3 path for table {table} in schema {schema}: {str(e)}\n{traceback.format_exc()}")
+            raise PromptError(f"Failed to generate S3 path: {str(e)}")
+
     def generate_system_prompt(self, datasource: Dict, schemas: List[str]) -> str:
         """Generate system prompt for LLM across multiple schemas.
 
@@ -182,9 +213,8 @@ class PromptGenerator:
             date_function = "YEAR(column)" if datasource["type"] == "sqlserver" else "EXTRACT(YEAR FROM column)"
             if datasource["type"] == "s3":
                 prompt += (
-                    f"Use DuckDB SQL for S3 queries. Access files using 'read_csv('s3://bucket/path/to/file.csv')' for CSV or "
-                    f"'read_parquet('s3://bucket/path/to/file.parquet')' for Parquet. "
-                    f"Table names should match the file names without extensions. "
+                    f"Use DuckDB SQL for S3 queries. Generate standard SQL queries referencing table names directly (e.g., SELECT * FROM table_name). "
+                    f"Do NOT use read_csv or read_parquet functions, as table loading is handled by the system. "
                     f"Use {date_function} for dates, LOWER and LIKE for strings, SUM and AVG for numerics. "
                     f"Ensure SQL is valid for DuckDB."
                 )
@@ -264,7 +294,6 @@ class PromptGenerator:
                 prediction["ddl"] = ""
             max_length = self.llm_config["prompt_settings"]["max_prompt_length"]
             file_type = self.storage_manager.file_type or "csv"
-            s3_path = datasource.get("s3_path", "")
             prompt = (
                 f"User Query: {nlq}\n"
                 f"Schemas: {', '.join(schemas)}\n"
@@ -308,10 +337,19 @@ class PromptGenerator:
                     self.logger.debug(f"No metadata added for NLQ: {nlq}, relying on prediction")
             date_function = "YEAR(column)" if datasource["type"] == "sqlserver" else "EXTRACT(YEAR FROM column)"
             if datasource["type"] == "s3":
+                table_s3_paths = {}
+                for table in prediction.get("tables", []):
+                    table_name = table.split(".")[-1]
+                    try:
+                        s3_path = self._get_s3_table_path(datasource, schemas[0], table_name)
+                        table_s3_paths[table_name] = s3_path
+                    except PromptError:
+                        continue
                 prompt += (
                     f"Generate a valid DuckDB SQL query for the S3 datasource. "
-                    f"Access files using 'read_{'csv' if file_type == 'csv' else 'parquet'}('{s3_path}')'. "
-                    f"Table names should match the file names without extensions. "
+                    f"Use standard SQL referencing table names directly (e.g., SELECT * FROM table_name). "
+                    f"Do NOT use read_csv or read_parquet functions, as table loading is handled by the system. "
+                    f"Table S3 paths (for reference): {json.dumps(table_s3_paths, indent=2)}\n"
                     f"Use {date_function} for dates, LOWER and LIKE for strings, SUM and AVG for numerics. "
                     f"Return only the SQL query wrapped in ```sql\n```."
                 )
