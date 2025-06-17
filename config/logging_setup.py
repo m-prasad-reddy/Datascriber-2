@@ -1,142 +1,78 @@
 import logging
-import logging.config
+import logging.handlers
+import os
 from pathlib import Path
-import configparser
-from typing import Optional
-from config.utils import ConfigUtils, ConfigError
 
 class LoggingSetup:
-    """Manages logging configuration for the Datascriber system.
+    # Configuration object (edit as needed)
+    LOGGING_CONFIG = {
+        "log_level": "DEBUG",  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+        # File and HTTP logging settings    
+        "log_file": os.path.join("logs", "datascriber.log"),
+        "enable_http_logging": False,
+        "enable_component_logging": True
+    }
 
-    Configures logging from logging_config.ini, supporting console, file, and notification logs.
-    Provides component-specific loggers as singletons.
+    @staticmethod
+    def setup_logging() -> None:
+        """Initialize logging with configurable settings."""
+        config = LoggingSetup.LOGGING_CONFIG
 
-    Attributes:
-        config_utils (ConfigUtils): Configuration utility instance.
-        loggers (dict): Cache of logger instances.
-        _instance (LoggingSetup): Singleton instance.
-        _configured (bool): Flag to prevent redundant configuration.
-    """
+        # Set log level
+        log_level = getattr(logging, config["log_level"].upper(), logging.INFO)
 
-    _instance: Optional['LoggingSetup'] = None
-    _configured: bool = False
+        # Create logger
+        logger = logging.getLogger()
+        logger.setLevel(log_level)
 
-    @classmethod
-    def get_instance(cls, config_utils: Optional[ConfigUtils] = None) -> 'LoggingSetup':
-        """Get the singleton instance of LoggingSetup.
+        # Clear existing handlers
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
 
-        Args:
-            config_utils (ConfigUtils, optional): Configuration utility instance.
+        # Console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_formatter = logging.Formatter(
+            "%(asctime)s\t%(levelname)s - %(name)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
 
-        Returns:
-            LoggingSetup: Singleton instance.
-
-        Raises:
-            ConfigError: If config_utils is missing on first initialization.
-        """
-        if cls._instance is None:
-            if config_utils is None:
-                raise ConfigError("ConfigUtils required for first initialization")
-            cls._instance = cls(config_utils)
-        return cls._instance
-
-    def __init__(self, config_utils: ConfigUtils):
-        """Initialize LoggingSetup.
-
-        Args:
-            config_utils (ConfigUtils): Configuration utility instance.
-
-        Raises:
-            ConfigError: If logging configuration fails.
-        """
-        if self._instance is not None:
-            raise ConfigError("LoggingSetup is a singleton. Use get_instance().")
-        self.config_utils = config_utils
-        self.loggers = {}
-        self._configure_logging()
-
-    def _configure_logging(self) -> None:
-        """Configure logging based on logging_config.ini.
-
-        Raises:
-            ConfigError: If configuration file is invalid or missing.
-        """
-        if self._configured:
-            return
+        # File handler
         try:
-            config_path = self.config_utils.config_dir / "logging_config.ini"
-            if not config_path.exists():
-                self._create_default_logging_config(config_path)
-            config = configparser.ConfigParser()
-            config.read(config_path)
-            logging.config.fileConfig(config, disable_existing_loggers=True)
-            self._configured = True
-        except Exception as e:
-            raise ConfigError(f"Failed to configure logging: {str(e)}")
+            # Compute absolute path relative to project root
+            log_file = config["log_file"]
+            log_file_path = Path(__file__).parent.parent / log_file
+            # Create logs directory if it doesn't exist
+            os.makedirs(log_file_path.parent, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file_path, maxBytes=10*1024*1024, backupCount=5
+            )
+            file_handler.setLevel(log_level)
+            file_formatter = logging.Formatter(
+                "%(asctime)s\t%(levelname)s - %(name)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S"
+            )
+            file_handler.setFormatter(file_formatter)
+            logger.addHandler(file_handler)
+            logger.debug(f"File logging initialized to: {log_file_path}")
+        except (OSError, ValueError) as e:
+            logger.error(f"Failed to initialize file logging to {log_file}: {str(e)}")
+            print(f"Error: File logging setup failed: {str(e)}")
 
-    def _create_default_logging_config(self, config_path: Path) -> None:
-        """Create a default logging configuration file.
+        # Configure HTTP logging
+        if not config["enable_http_logging"]:
+            for http_logger in ["httpcore", "httpx", "openai._base_client"]:
+                logging.getLogger(http_logger).setLevel(logging.WARNING)
 
-        Args:
-            config_path (Path): Path to the logging configuration file.
-        """
-        config = configparser.ConfigParser()
-        config['loggers'] = {'keys': 'root,datascriber,notifications'}
-        config['handlers'] = {'keys': 'console,file,notification_file'}
-        config['formatters'] = {'keys': 'standard'}
-        config['logger_root'] = {
-            'level': 'DEBUG',
-            'handlers': 'console,file'
-        }
-        config['logger_datascriber'] = {
-            'level': 'DEBUG',
-            'handlers': 'console,file',
-            'qualname': 'datascriber',
-            'propagate': '0'
-        }
-        config['logger_notifications'] = {
-            'level': 'INFO',
-            'handlers': 'notification_file',
-            'qualname': 'notifications',
-            'propagate': '0'
-        }
-        config['handler_console'] = {
-            'class': 'logging.StreamHandler',
-            'level': 'INFO',
-            'formatter': 'standard',
-            'args': '(sys.stdout,)'
-        }
-        config['handler_file'] = {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'level': 'DEBUG',
-            'formatter': 'standard',
-            'args': f"('{self.config_utils.logs_dir / 'datascriber.log'}', 'a', 10485760, 5)"
-        }
-        config['handler_notification_file'] = {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'level': 'INFO',
-            'formatter': 'standard',
-            'args': f"('{self.config_utils.logs_dir / 'notifications.log'}', 'a', 10485760, 5)"
-        }
-        config['formatter_standard'] = {
-            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            'datefmt': '%Y-%m-%d %H:%M:%S'
-        }
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, 'w') as f:
-            config.write(f)
+        # Log configuration
+        logger.info(f"Logging initialized: level={config['log_level']}, "
+                    f"file={config['log_file']}, "
+                    f"http_logging={config['enable_http_logging']}, "
+                    f"component_logging={config['enable_component_logging']}")
 
-    def get_logger(self, name: str, component: str = "system") -> logging.Logger:
-        """Get a logger instance for a specific component.
-
-        Args:
-            name (str): Logger name (e.g., 'cli', 'data_executor').
-            component (str): Component identifier (e.g., 'system', datasource name).
-
-        Returns:
-            logging.Logger: Configured logger instance.
-        """
-        logger_name = f"datascriber.{name}.{component}"
-        if logger_name not in self.loggers:
-            self.loggers[logger_name] = logging.getLogger(logger_name)
-        return self.loggers[logger_name]
+    @staticmethod
+    def get_logger(name: str) -> logging.Logger:
+        """Get a configured logger."""
+        return logging.getLogger(name)

@@ -1,0 +1,9 @@
+{
+  "common_mappings": {
+    "customers": ["customer", "clients", "users"],
+    "orders": ["order", "purchases"],
+    "products": ["product", "items"],
+    "stores": ["store", "shops"],
+    "staffs": ["staff", "employees"]
+  }
+}

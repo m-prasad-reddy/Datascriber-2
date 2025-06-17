@@ -1,6 +1,18 @@
 import json
-from typing import Dict, Optional, List
+import pandas as pd
+from typing import Dict, Optional, List, Tuple
+import logging
+import traceback
+import sqlite3
+import re
+from pathlib import Path
 from config.utils import ConfigUtils, ConfigError
+from storage.db_manager import DBManager
+from storage.storage_manager import StorageManager
+from nlp.nlp_processor import NLPProcessor
+from tia.table_identifier import TableIdentifier
+from proga.prompt_generator import PromptGenerator
+from opden.data_executor import DataExecutor
 from config.logging_setup import LoggingSetup
 
 class OrchestrationError(Exception):
@@ -15,30 +27,79 @@ class Orchestrator:
 
     Attributes:
         config_utils (ConfigUtils): Configuration utility instance.
+        db_manager (DBManager): Database manager instance.
+        storage_manager (StorageManager): Storage manager instance.
+        nlp_processor (NLPProcessor): NLP processor instance.
         logger (logging.Logger): System-wide logger.
         user (Optional[str]): Current user (admin/datauser).
         datasource (Optional[Dict]): Selected datasource configuration.
+        default_mappings (Dict): Default synonym mappings from config.
+        validated_tables (Optional[List[str]]): Admin-validated tables for current query.
+        enable_component_logging (bool): Flag for component output logging.
     """
 
-    def __init__(self, config_utils: ConfigUtils):
+    def __init__(self, config_utils: ConfigUtils, db_manager: DBManager, storage_manager: StorageManager, nlp_processor: NLPProcessor):
         """Initialize Orchestrator.
 
         Args:
             config_utils (ConfigUtils): Configuration utility instance.
+            db_manager (DBManager): Database manager instance.
+            storage_manager (StorageManager): Storage manager instance.
+            nlp_processor (NLPProcessor): NLP processor instance.
 
         Raises:
             OrchestrationError: If initialization fails.
         """
         self.config_utils = config_utils
+        self.db_manager = db_manager
+        self.storage_manager = storage_manager
+        self.nlp_processor = nlp_processor
+        self.logger = LoggingSetup.get_logger(__name__)
+        self.enable_component_logging = LoggingSetup.LOGGING_CONFIG.get("enable_component_logging", False)
         try:
-            self.logging_setup = LoggingSetup.get_instance(self.config_utils)
-            self.logger = self.logging_setup.get_logger("orchestrator", "system")
             self.user = None
             self.datasource = None
-            self.logger.debug("Initialized Orchestrator")
+            self.validated_tables = None
+            self.default_mappings = self._load_default_mappings()
+            self.logger.debug("Initialized Orchestrator (version: 2025-06-14)")
+            if self.enable_component_logging:
+                print("Component Output: Initialized Orchestrator")
         except ConfigError as e:
-            self.logger.error(f"Failed to initialize Orchestrator: {str(e)}")
+            self.logger.error(f"Failed to initialize Orchestrator: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to initialize Orchestrator: {str(e)}")
+
+    def _load_default_mappings(self) -> Dict:
+        """Load default synonym mappings from default_mappings.json.
+
+        Returns:
+            Dict: Default mappings.
+
+        Raises:
+            OrchestrationError: If loading fails critically.
+        """
+        try:
+            config_path = self.config_utils.config_dir / "default_mappings.json"
+            if config_path.exists():
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                self.logger.debug(f"Loaded default mappings from {config_path}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Loaded default mappings from {config_path}")
+                return config.get("common_mappings", {})
+            self.logger.warning(f"default_mappings.json not found at {config_path}, using empty fallback")
+            return {}
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse default_mappings.json: {str(e)}, using empty fallback")
+            return {}
+
+    def reset_session(self) -> None:
+        """Reset session state."""
+        self.user = None
+        self.datasource = None
+        self.validated_tables = None
+        self.logger.debug("Session state reset")
+        if self.enable_component_logging:
+            print("Component Output: Session state reset")
 
     def login(self, username: str) -> bool:
         """Authenticate user.
@@ -53,11 +114,13 @@ class Orchestrator:
             if username in ["admin", "datauser"]:
                 self.user = username
                 self.logger.info(f"User {username} logged in")
+                if self.enable_component_logging:
+                    print(f"Component Output: User {username} logged in")
                 return True
             self.logger.error(f"Invalid username: {username}")
             return False
         except Exception as e:
-            self.logger.error(f"Login failed for {username}: {str(e)}")
+            self.logger.error(f"Login failed for {username}: {str(e)}\n{traceback.format_exc()}")
             return False
 
     def select_datasource(self, datasource_name: str) -> bool:
@@ -78,67 +141,216 @@ class Orchestrator:
             if not self.datasource:
                 self.logger.error(f"Datasource {datasource_name} not found")
                 return False
-            self.logger.info(f"Selected datasource: {datasource_name}")
+            schemas = self.datasource["connection"].get("schemas", [])
+            if not schemas:
+                self.logger.error(f"No schemas configured for datasource {datasource_name}")
+                return False
+            self.logger.info(f"Selected datasource {datasource_name} with schemas {schemas}")
+            if self.enable_component_logging:
+                print(f"Component Output: Selected datasource {datasource_name} with schemas {schemas}")
             return True
         except ConfigError as e:
-            self.logger.error(f"Failed to select datasource {datasource_name}: {str(e)}")
+            self.logger.error(f"Failed to select datasource {datasource_name}: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to select datasource: {str(e)}")
 
-    def validate_metadata(self, datasource: Dict, schema: str = None) -> bool:
+    def validate_metadata(self, datasource: Dict, schemas: Optional[List[str]] = None) -> bool:
         """Validate metadata for the selected datasource and schema(s).
 
         Args:
             datasource (Dict): Datasource configuration.
-            schema (str, optional): Schema name. If None, validates all configured schemas.
+            schemas (Optional[List[str]]): List of schema names. If None, validates all.
 
         Returns:
             bool: True if metadata valid, False otherwise.
 
         Raises:
-            OrchestrationError: If validation fails critically.
+            OrchestrationError: If validation fails.
         """
         try:
-            from storage.db_manager import DBManager
-            from storage.storage_manager import StorageManager
             self.datasource = datasource
-            schemas = datasource["connection"].get("schemas", []) if schema is None else [schema]
+            schemas = schemas or datasource["connection"].get("schemas", [])
             if not schemas:
-                self.logger.error("No schemas configured")
+                self.logger.error(f"No schemas configured for datasource {datasource['name']}")
                 return False
-            valid = True
-            for s in schemas:
+            valid_schemas = []
+            for schema in schemas:
+                if not isinstance(schema, str) or not schema.strip():
+                    self.logger.warning(f"Skipping invalid schema: {schema}")
+                    continue
+                metadata_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / f"metadata_data_{schema}.json"
+                metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+                if metadata_path.exists() and metadata.get("tables"):
+                    self.logger.debug(f"Metadata valid for schema {schema} with {len(metadata['tables'])} tables")
+                    valid_schemas.append(schema)
+                    continue
+                self.logger.debug(f"No valid metadata found for schema {schema} at {metadata_path}, attempting regeneration")
+                if self.enable_component_logging:
+                    print(f"Component Output: Regenerating metadata for schema {schema} in datasource {datasource['name']}")
                 if datasource["type"] == "sqlserver":
-                    db_manager = DBManager(self.config_utils)
-                    if not db_manager.validate_metadata(datasource, s):
-                        if self.user == "admin":
-                            db_manager.fetch_metadata(datasource, s, generate_rich_template=True)
-                            valid &= db_manager.validate_metadata(datasource, s)
-                        else:
-                            valid = False
+                    if self.db_manager.validate_metadata(datasource, schema):
+                        valid_schemas.append(schema)
+                    elif self.user == "admin":
+                        self.db_manager.fetch_metadata(datasource, schema)
+                        if self.db_manager.validate_metadata(datasource, schema):
+                            valid_schemas.append(schema)
+                    else:
+                        self.logger.warning(f"Metadata regeneration skipped for schema {schema} (SQL Server, non-admin user)")
                 elif datasource["type"] == "s3":
-                    storage_manager = StorageManager(self.config_utils)
-                    valid &= storage_manager.validate_metadata(datasource, s)
+                    if self.storage_manager.validate_metadata(datasource, schema):
+                        new_metadata = self.storage_manager.get_metadata(datasource, schema)
+                        if new_metadata.get("tables"):
+                            self.logger.debug(f"Regenerated metadata valid for schema {schema} with {len(new_metadata['tables'])} tables")
+                            valid_schemas.append(schema)
+                        else:
+                            self.logger.warning(f"No tables found in regenerated metadata for schema {schema}")
+                    else:
+                        self.logger.warning(f"Failed to regenerate metadata for schema {schema} (S3)")
                 else:
                     self.logger.error(f"Unsupported datasource type: {datasource['type']}")
-                    valid = False
-                if not valid:
-                    self.logger.warning(f"Metadata validation failed for schema {s}")
-                    if self.user == "datauser":
-                        self.user = None
-                        self.datasource = None
-                        return False
-            return valid
-        except (ImportError, ConfigError) as e:
-            self.logger.error(f"Failed to validate metadata: {str(e)}")
+            if not valid_schemas:
+                self.logger.error("No valid schemas found for validation")
+                return False
+            self.logger.info(f"Metadata validation successful for schemas: {valid_schemas}")
+            if self.enable_component_logging:
+                print(f"Component Output: Metadata validated for schemas {valid_schemas}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to validate metadata: {str(e)}\n{traceback.format_exc()}")
             raise OrchestrationError(f"Failed to validate metadata: {str(e)}")
 
-    def process_nlq(self, datasource: Dict, nlq: str, schema: str = "default", entities: Optional[Dict] = None) -> Optional[Dict]:
-        """Process a natural language query.
+    def _get_next_scenario_id(self, datasource: Dict) -> str:
+        """Generate the next scenario_id for training data as a string.
+
+        Queries the training_data table in datascriber.db to find the maximum scenario_id,
+        parses the numeric part, and returns a formatted string (e.g., 'SCN_000001').
+
+        Args:
+            datasource (Dict): Datasource configuration.
+
+        Returns:
+            str: Next scenario_id (e.g., 'SCN_000001').
+
+        Raises:
+            OrchestrationError: If database query fails.
+        """
+        try:
+            db_path = self.config_utils.get_datasource_data_dir(datasource["name"]) / "datascriber.db"
+            self.logger.debug(f"Accessing database at {db_path}")
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(scenario_id) FROM training_data")
+            max_id = cursor.fetchone()[0]
+            if max_id and isinstance(max_id, str) and max_id.startswith("SCN_"):
+                match = re.match(r"SCN_(\d+)", max_id)
+                if match:
+                    numeric_part = int(match.group(1))
+                    next_numeric = numeric_part + 1
+                else:
+                    self.logger.warning(f"Invalid scenario_id format: {max_id}, defaulting to 1")
+                    next_numeric = 1
+            else:
+                next_numeric = 1
+            next_id = f"SCN_{next_numeric:06d}"
+            conn.close()
+            self.logger.debug(f"Generated next scenario_id: {next_id} for datasource {datasource['name']}")
+            if self.enable_component_logging:
+                print(f"Component Output: Generated scenario_id {next_id}")
+            return next_id
+        except Exception as e:
+            self.logger.error(f"Failed to generate scenario_id for database at {db_path}: {str(e)}\n{traceback.format_exc()}")
+            raise OrchestrationError(f"Failed to generate scenario_id: {str(e)}")
+
+    def _handle_admin(self, datasource: Dict, nlq: str, schema: str, entities: Dict, tia_result: Dict) -> Tuple[List[str], Optional[Dict]]:
+        """Handle admin feedback for table predictions.
 
         Args:
             datasource (Dict): Datasource configuration.
             nlq (str): Natural language query.
-            schema (str): Schema name, defaults to 'default'.
+            schema (str): Schema name.
+            entities (Dict): Extracted entities.
+            tia_result (Dict): Table identification result with predicted tables.
+
+        Returns:
+            Tuple[List[str], Optional[Dict]]: Validated tables and training data row (if any).
+        """
+        try:
+            predicted_tables = tia_result.get("tables", [])
+            if not predicted_tables:
+                self.logger.warning(f"No tables identified for NLQ: {nlq}, using fallback")
+                nlp_result = self.nlp_processor.process_query(nlq, schema, datasource=datasource)
+                tokens = nlp_result.get("tokens", [])
+                for token in tokens:
+                    for key, syn_list in self.default_mappings.items():
+                        if token.lower() == key or token.lower() in [s.lower() for s in syn_list]:
+                            metadata = self.config_utils.load_metadata(datasource["name"], [schema]).get(schema, {})
+                            if any(t["name"].lower() == key for t in metadata.get("tables", [])):
+                                predicted_tables.append(f"{schema}.{key}")
+                                break
+                    if predicted_tables:
+                        break
+            self.logger.debug(f"Admin feedback requested for predicted tables: {predicted_tables}")
+            if self.enable_component_logging:
+                print(f"Component Output: Predicted tables for NLQ '{nlq}': {predicted_tables}")
+            return predicted_tables, None  # CLI will handle prompting
+        except Exception as e:
+            self.logger.error(f"Failed to handle admin feedback for NLQ {nlq}: {str(e)}\n{traceback.format_exc()}")
+            return [], None
+
+    def process_admin_feedback(self, datasource: Dict, nlq: str, schema: str, entities: Dict, tia_result: Dict, validated_tables: List[str], is_correct: bool) -> Dict:
+        """Process admin feedback for table predictions and generate training data.
+
+        Args:
+            datasource (Dict): Datasource configuration.
+            nlq (str): Natural language query.
+            schema (str): Schema name.
+            entities (Dict): Extracted entities.
+            tia_result (Dict): Table identification result.
+            validated_tables (List[str]): Tables validated or provided by admin.
+            is_correct (bool): Whether the predicted tables were correct.
+
+        Returns:
+            Dict: Training data row.
+
+        Raises:
+            OrchestrationError: If processing fails.
+        """
+        try:
+            self.logger.debug(f"Processing admin feedback for NLQ: {nlq}, validated tables: {validated_tables}, is_correct: {is_correct}")
+            if not validated_tables or not all(isinstance(t, str) and "." in t for t in validated_tables):
+                self.logger.error(f"Invalid validated tables: {validated_tables}")
+                raise OrchestrationError("Invalid validated tables provided")
+            self.validated_tables = validated_tables
+            prompt_generator = PromptGenerator(self.config_utils)
+            updated_tia_result = tia_result.copy()
+            updated_tia_result["tables"] = validated_tables
+            scenario_id = self._get_next_scenario_id(datasource)
+            if is_correct and tia_result.get("sql"):
+                self.logger.debug(f"Using existing SQL for correct prediction: {tia_result['sql']}")
+                sql_query = tia_result["sql"]
+            else:
+                self.logger.debug(f"Generating new prompt and SQL for NLQ: {nlq}")
+                system_prompt = prompt_generator.generate_system_prompt(datasource, [schema])
+                user_prompt = prompt_generator.generate_user_prompt(datasource, nlq, [schema], entities, updated_tia_result)
+                sql_query = prompt_generator.generate_sql(datasource, system_prompt, user_prompt, [schema], entities, updated_tia_result, self.user)
+            training_row = prompt_generator.generate_training_data(
+                datasource, nlq, schema, entities, sql_query, updated_tia_result, scenario_id=scenario_id
+            )
+            prompt_generator.save_training_data(datasource, [training_row])
+            self.logger.info(f"Processed admin feedback for NLQ: {nlq}, validated tables: {validated_tables}, scenario_id: {scenario_id}")
+            if self.enable_component_logging:
+                print(f"Component Output: Admin feedback processed for NLQ '{nlq}' with validated tables {validated_tables}")
+            return training_row
+        except Exception as e:
+            self.logger.error(f"Failed to process admin feedback for NLQ {nlq}: {str(e)}\n{traceback.format_exc()}")
+            raise OrchestrationError(f"Failed to process admin feedback: {str(e)}")
+
+    def process_nlq(self, datasource: Dict, nlq: str, schemas: Optional[List[str]] = None, entities: Optional[Dict] = None) -> Optional[Dict]:
+        """Process a natural language query across multiple schemas.
+
+        Args:
+            datasource (Dict): Datasource configuration.
+            nlq (str): Natural language query.
+            schemas (Optional[List[str]]): List of schema names. If None, uses all configured schemas.
             entities (Optional[Dict]): Extracted entities (dates, names, objects, places).
 
         Returns:
@@ -147,80 +359,119 @@ class Orchestrator:
         Raises:
             OrchestrationError: If processing fails critically.
         """
-        try:
-            from nlp.nlp_processor import NLPProcessor
-            from tia.table_identifier import TableIdentifier
-            from proga.prompt_generator import PromptGenerator
-            from opden.data_executor import DataExecutor
-            self.datasource = datasource
-            if not self.validate_metadata(datasource, schema):
-                self.notify_admin(datasource, nlq, schema, "Invalid metadata", entities)
-                return None
-            nlp_processor = NLPProcessor(self.config_utils)
-            table_identifier = TableIdentifier(self.config_utils)
-            prompt_generator = PromptGenerator(self.config_utils)
-            data_executor = DataExecutor(self.config_utils)
-            entities = entities or nlp_processor.process_query(nlq, schema).get("entities", {})
-            tia_result = table_identifier.predict_tables(datasource, nlq, schema)
-            if not tia_result or not tia_result.get("tables"):
-                self.notify_admin(datasource, nlq, schema, "No tables predicted by TIA", entities)
-                return None
-            tia_result["entities"] = entities
-            system_prompt = prompt_generator.generate_system_prompt(datasource, schema)
-            user_prompt = prompt_generator.generate_user_prompt(datasource, nlq, schema, entities, tia_result)
-            sample_data, csv_path, sql_query = data_executor.execute_query(
-                datasource=datasource,
-                prompt=user_prompt,
-                schema=schema,
-                user=self.user,
-                nlq=nlq,
-                system_prompt=system_prompt,
-                prediction=tia_result
-            )
-            if sample_data is None:
-                self.notify_admin(datasource, nlq, schema, "Query execution returned no data", entities)
-                return None
-            result = {
-                "tables": tia_result["tables"],
-                "columns": tia_result["columns"],
-                "extracted_values": tia_result["extracted_values"],
-                "placeholders": tia_result["placeholders"],
-                "entities": entities,
-                "prompt": user_prompt,
-                "sql_query": sql_query,
-                "sample_data": sample_data.to_dict(orient="records") if sample_data is not None else [],
-                "csv_path": csv_path
-            }
-            training_row = prompt_generator.generate_training_data(
-                datasource, nlq, schema, entities, sql_query, tia_result
-            )
-            prompt_generator.save_training_data(datasource, [training_row])
-            self.logger.info(f"Processed NLQ: {nlq}, saved training data")
-            return result
-        except (ImportError, ConfigError) as e:
-            self.notify_admin(datasource, nlq, schema, str(e), entities)
-            self.logger.error(f"Failed to process NLQ '{nlq}': {str(e)}")
-            return None
+        max_retries = 1  # Reduced to minimize log clutter
+        for attempt in range(max_retries):
+            try:
+                table_identifier = TableIdentifier(self.config_utils)
+                prompt_generator = PromptGenerator(self.config_utils)
+                data_executor = DataExecutor(self.config_utils)
+                self.datasource = datasource
+                schemas = schemas or datasource["connection"].get("schemas", [])
+                if not schemas or not all(isinstance(s, str) and s.strip() for s in schemas):
+                    self.logger.error(f"Invalid schemas input: {schemas}")
+                    raise OrchestrationError(f"Invalid schemas: {schemas}")
+                self.logger.debug(f"Processing NLQ '{nlq}' for schemas {schemas}, attempt {attempt + 1}")
+                if not self.validate_metadata(datasource, schemas):
+                    self.notify_admin(datasource, nlq, schemas, "Invalid metadata", entities)
+                    return None
+                entities = entities or self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource).get("entities", {})
+                tia_result = table_identifier.identify_tables(datasource, nlq, schemas)
+                if not tia_result.get("tables"):
+                    self.logger.warning(f"No tables identified for NLQ: {nlq}, attempting fallback")
+                    nlp_result = self.nlp_processor.process_query(nlq, schemas[0], datasource=datasource)
+                    tokens = nlp_result.get("tokens", [])
+                    for token in tokens:
+                        for key, syn_list in self.default_mappings.items():
+                            if token.lower() == key or token.lower() in [s.lower() for s in syn_list]:
+                                metadata = self.config_utils.load_metadata(datasource["name"], [schemas[0]]).get(schemas[0], {})
+                                if any(t["name"].lower() == key for t in metadata.get("tables", [])):
+                                    tia_result["tables"] = [f"{schemas[0]}.{key}"]
+                                    break
+                        if tia_result["tables"]:
+                            break
+                if not tia_result["tables"]:
+                    self.notify_admin(datasource, nlq, schemas, "No tables identified by TIA", entities)
+                    return None
+                tia_result["entities"] = entities
+                if self.user == "admin":
+                    predicted_tables, _ = self._handle_admin(datasource, nlq, schemas[0], entities, tia_result)
+                    return {"predicted_tables": predicted_tables, "tia_result": tia_result, "entities": entities}
+                # Use validated_tables if available (from admin feedback)
+                tia_result["tables"] = self.validated_tables if self.validated_tables else tia_result["tables"]
+                self.logger.debug(f"Using tables for NLQ '{nlq}': {tia_result['tables']}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Using tables for NLQ '{nlq}': {tia_result['tables']}")
+                system_prompt = prompt_generator.generate_system_prompt(datasource, schemas)
+                user_prompt = prompt_generator.generate_user_prompt(datasource, nlq, schemas, entities, tia_result)
+                sql_query = prompt_generator.generate_sql(datasource, system_prompt, user_prompt, schemas, entities, tia_result, self.user)
+                sample_data, csv_path, _ = data_executor.execute_query(
+                    datasource=datasource,
+                    prompt=user_prompt,
+                    schemas=schemas,
+                    user=self.user,
+                    nlq=nlq,
+                    system_prompt=system_prompt,
+                    prediction=tia_result
+                )
+                if self.enable_component_logging:
+                    print(f"Component Output: Generated SQL for NLQ '{nlq}': {sql_query}")
+                if sample_data is None:
+                    self.notify_admin(datasource, nlq, schemas, "Query execution returned no data", entities)
+                    if attempt == max_retries - 1:
+                        self.logger.error(f"Max retries ({max_retries}) reached for NLQ: {nlq}")
+                        return None
+                    self.logger.warning(f"Query failed for NLQ: {nlq}, retrying ({attempt + 2}/{max_retries})")
+                    continue
+                result = {
+                    "tables": tia_result["tables"],
+                    "columns": tia_result["columns"],
+                    "extracted_values": tia_result["extracted_values"],
+                    "placeholders": tia_result["placeholders"],
+                    "entities": entities,
+                    "prompt": user_prompt,
+                    "sql_query": sql_query,
+                    "sample_data": sample_data.to_dict(orient="records") if sample_data is not None else [],
+                    "csv_path": csv_path
+                }
+                scenario_id = self._get_next_scenario_id(datasource)
+                training_row = prompt_generator.generate_training_data(
+                    datasource, nlq, schemas[0], entities, sql_query, tia_result, scenario_id=scenario_id
+                )
+                prompt_generator.save_training_data(datasource, [training_row])
+                self.logger.info(f"Processed NLQ: {nlq}, saved training data with scenario_id: {scenario_id}")
+                if self.enable_component_logging:
+                    print(f"Component Output: Processed NLQ '{nlq}' with {len(result['sample_data'])} rows, scenario_id: {scenario_id}")
+                return result
+            except Exception as e:
+                self.notify_admin(datasource, nlq, schemas, str(e), entities)
+                self.logger.error(f"Failed to process NLQ '{nlq}' on attempt {attempt + 1}: {str(e)}\n{traceback.format_exc()}")
+                if attempt == max_retries - 1:
+                    print(f"Error: Failed to process NLQ after {max_retries} attempts: {str(e)}")
+                    return None
+                self.logger.warning(f"Retrying NLQ: {nlq}, attempt {attempt + 2}/{max_retries}")
+                continue
 
-    def notify_admin(self, datasource: Dict, nlq: str, schema: str, reason: str, entities: Optional[Dict] = None) -> None:
+    def notify_admin(self, datasource: Dict, nlq: str, schemas: List[str], reason: str, entities: Optional[Dict] = None) -> None:
         """Notify admin of a failed query.
 
         Args:
             datasource (Dict): Datasource configuration.
             nlq (str): Failed natural language query.
-            schema (str): Schema name.
+            schemas (List[str]): Schema names.
             reason (str): Reason for failure.
             entities (Optional[Dict]): Extracted entities.
         """
         try:
-            from storage.db_manager import DBManager
-            db_manager = DBManager(self.config_utils)
-            db_manager.store_rejected_query(
-                datasource, nlq, reason, self.user or "unknown", "NLQProcessingFailure"
+            schema = schemas[0] if schemas and isinstance(schemas, list) and schemas[0] else "unknown"
+            self.storage_manager.store_rejected_query(
+                datasource, nlq, schema, reason, self.user or "unknown", "NLQProcessingFailure"
             )
-            self.logger.info(f"Notified admin: Logged rejected query '{nlq}'")
-        except ImportError as e:
-            self.logger.error(f"Failed to notify admin for query '{nlq}': {str(e)}")
+            self.logger.info(f"Notified admin: Logged rejected query '{nlq}' for schemas {schemas}")
+            if self.enable_component_logging:
+                print(f"Component Output: Notified admin for failed NLQ '{nlq}' with reason: {reason}")
+        except Exception as e:
+            self.logger.error(f"Failed to notify admin for query '{nlq}': {str(e)}\n{traceback.format_exc()}")
+            print(f"Error: Failed to notify admin: {str(e)}")
 
     def map_failed_query(self, datasource: Dict, nlq: str, tables: List[str], columns: List[str], sql: str) -> bool:
         """Map a failed query to tables, columns, and SQL for training.
@@ -236,31 +487,34 @@ class Orchestrator:
             bool: True if successful, False otherwise.
         """
         try:
-            from nlp.nlp_processor import NLPProcessor
-            from proga.prompt_generator import PromptGenerator
-            from tia.table_identifier import TableIdentifier
-            self.datasource = datasource
-            nlp_processor = NLPProcessor(self.config_utils)
-            prompt_generator = PromptGenerator(self.config_utils)
             table_identifier = TableIdentifier(self.config_utils)
-            entities = nlp_processor.process_query(nlq, "default").get("entities", {})
+            prompt_generator = PromptGenerator(self.config_utils)
+            self.datasource = datasource
+            entities = self.nlp_processor.process_query(nlq, "default", datasource=datasource).get("entities", {})
+            scenario_id = self._get_next_scenario_id(datasource)
+            system_prompt = prompt_generator.generate_system_prompt(datasource, ["default"])
+            user_prompt = prompt_generator.generate_user_prompt(datasource, nlq, ["default"], entities, {"tables": tables, "columns": columns})
+            sql_query = prompt_generator.generate_sql(datasource, system_prompt, user_prompt, ["default"], entities, {"tables": tables, "columns": columns}, self.user)
             training_row = prompt_generator.generate_training_data(
-                datasource, nlq, "default", entities, sql, {"tables": tables, "columns": columns}
+                datasource, nlq, "default", entities, sql_query, {"tables": tables, "columns": columns}, scenario_id=scenario_id
             )
             prompt_generator.save_training_data(datasource, [training_row])
-            table_identifier.train_manual(datasource, nlq, tables, columns, entities.get("extracted_values", {}), [], sql)
-            self.logger.info(f"Mapped failed query '{nlq}'")
+            table_identifier.train_manual(datasource, nlq, tables, columns, entities.get("extracted_values", {}), [], sql_query)
+            self.logger.info(f"Mapped failed query '{nlq}' with scenario_id: {scenario_id}")
+            if self.enable_component_logging:
+                print(f"Component Output: Mapped failed query '{nlq}' with scenario_id: {scenario_id}")
             return True
-        except (ImportError, ConfigError) as e:
-            self.logger.error(f"Failed to map query '{nlq}': {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to map query '{nlq}': {str(e)}\n{traceback.format_exc()}")
+            print(f"Error: Failed to map query: {str(e)}")
             return False
 
-    def refresh_metadata(self, datasource: Dict, schema: str) -> bool:
-        """Refresh metadata for the selected datasource and schema.
+    def refresh_metadata(self, datasource: Dict, schemas: List[str]) -> bool:
+        """Refresh metadata for the selected datasource and schemas.
 
         Args:
             datasource (Dict): Datasource configuration.
-            schema (str): Schema name.
+            schemas (List[str]): Schema names.
 
         Returns:
             bool: True if successful, False otherwise.
@@ -269,24 +523,27 @@ class Orchestrator:
             OrchestrationError: If refresh fails.
         """
         try:
-            from storage.db_manager import DBManager
-            from storage.storage_manager import StorageManager
             self.datasource = datasource
-            if datasource["type"] == "sqlserver":
-                db_manager = DBManager(self.config_utils)
-                db_manager.fetch_metadata(datasource, schema, generate_rich_template=True)
-                self.logger.info(f"Refreshed metadata for schema {schema} (SQL Server)")
-                return True
-            elif datasource["type"] == "s3":
-                storage_manager = StorageManager(self.config_utils)
-                storage_manager.fetch_metadata(datasource, schema)
-                self.logger.info(f"Refreshed metadata for schema {schema} (S3)")
-                return True
-            else:
-                self.logger.error(f"Unsupported datasource type: {datasource['type']}")
-                return False
-        except (ImportError, ConfigError) as e:
-            self.logger.error(f"Failed to refresh metadata for schema {schema}: {str(e)}")
+            success = True
+            for schema in schemas:
+                if not isinstance(schema, str) or not schema.strip():
+                    self.logger.warning(f"Skipping invalid schema: {schema}")
+                    continue
+                if datasource["type"] == "sqlserver":
+                    self.db_manager.fetch_metadata(datasource, schema)
+                    self.logger.info(f"Refreshed metadata for schema {schema} (SQL Server)")
+                elif datasource["type"] == "s3":
+                    self.storage_manager.create_metadata(datasource, schema)
+                    self.logger.info(f"Refreshed metadata for schema {schema} (S3)")
+                else:
+                    self.logger.error(f"Unsupported datasource type: {datasource['type']}")
+                    success = False
+            if self.enable_component_logging:
+                print(f"Component Output: Refreshed metadata for schemas {schemas}")
+            return success
+        except Exception as e:
+            self.logger.error(f"Failed to refresh metadata for schemas {schemas}: {str(e)}\n{traceback.format_exc()}")
+            print(f"Error: Failed to refresh metadata: {str(e)}")
             return False
 
     def train_model(self, datasource: Dict) -> bool:
@@ -302,29 +559,49 @@ class Orchestrator:
             OrchestrationError: If training fails.
         """
         try:
-            from storage.db_manager import DBManager
-            from tia.table_identifier import TableIdentifier
-            self.datasource = datasource
-            db_manager = DBManager(self.config_utils)
             table_identifier = TableIdentifier(self.config_utils)
-            training_data = db_manager.get_training_data(datasource)
+            self.datasource = datasource
+            training_data = self.db_manager.get_training_data(datasource)
             if training_data:
                 table_identifier.train(datasource, training_data)
                 self.logger.info(f"Trained prediction model for datasource {datasource['name']}")
             else:
                 table_identifier.generate_model(datasource)
-                self.logger.info(f"Generated default prediction model for datasource {datasource['name']}")
+                self.logger.info(f"Generated static prediction model for datasource {datasource['name']}")
+            if self.enable_component_logging:
+                print(f"Component Output: Trained model for datasource {datasource['name']}")
             return True
-        except (ImportError, ConfigError) as e:
-            self.logger.error(f"Failed to train model: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Failed to train model: {str(e)}\n{traceback.format_exc()}")
+            print(f"Error: Failed to train model: {str(e)}")
             return False
 
-    def get_table_columns(self, datasource: Dict, schema: str, table: str) -> List[str]:
-        """Get columns for a specified table.
+    def set_synonym_mode(self, mode: str) -> bool:
+        """Set synonym mode (stub for interface compatibility).
+
+        Args:
+            mode (str): Synonym mode (static/dynamic).
+
+        Returns:
+            bool: True if mode is set, False otherwise.
+        """
+        try:
+            # Stub: To be implemented in TableIdentifier
+            self.logger.info(f"Set synonym mode to: {mode} (stub)")
+            if self.enable_component_logging:
+                print(f"Component Output: Set synonym mode to {mode} (stub)")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to set synonym mode: {str(e)}\n{traceback.format_exc()}")
+            print(f"Error: Failed to set synonym mode: {str(e)}")
+            return False
+
+    def get_table_columns(self, datasource: Dict, schemas: List[str], table: str) -> List[str]:
+        """Get columns for a specified table across schemas.
 
         Args:
             datasource (Dict): Datasource configuration.
-            schema (str): Schema name.
+            schemas (List[str]): Schema names.
             table (str): Table name.
 
         Returns:
@@ -332,12 +609,20 @@ class Orchestrator:
         """
         try:
             self.datasource = datasource
-            metadata = self.config_utils.load_metadata(datasource["name"], schema)
-            for t in metadata.get("tables", {}).values():
-                if t["name"] == table:
-                    return [col["name"] for col in t.get("columns", [])]
-            self.logger.warning(f"Table {table} not found in schema {schema}")
+            for schema in schemas:
+                if not isinstance(schema, str) or not schema.strip():
+                    self.logger.warning(f"Skipping invalid schema: {schema}")
+                    continue
+                metadata = self.config_utils.load_metadata(datasource["name"], [schema])
+                for t in metadata.get(schema, {}).get("tables", []):
+                    if t["name"] == table:
+                        columns = [col["name"] for col in t.get("columns", [])]
+                        if self.enable_component_logging:
+                            print(f"Component Output: Retrieved columns for table {table}: {columns}")
+                        return columns
+            self.logger.warning(f"Table {table} not found in schemas {schemas}")
             return []
         except ConfigError as e:
-            self.logger.error(f"Failed to get columns for table {table}: {str(e)}")
+            self.logger.error(f"Failed to get columns for table {table}: {str(e)}\n{traceback.format_exc()}")
+            print(f"Error: Failed to get columns for table: {str(e)}")
             return []

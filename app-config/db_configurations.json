@@ -22,7 +22,8 @@
         "database": "data-files",
         "region": "us-east-1",
         "schemas": ["default"],
-        "tables": []
+        "tables": [],
+        "orc_pattern": "^data_"
       }
     }
   ]
