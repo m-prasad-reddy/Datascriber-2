@@ -103,54 +103,7 @@ graph TD
     C -->|Initializes| J
     C -->|Initializes| R
 ```
-
-graph TD
-    %% User Layer
-    A[Data User<br>Web UI, Chat Widget] -->|HTTPS| B[Flask Web App<br>AKS]
-    C[Admin User<br>Admin Dashboard] -->|HTTPS| B
-
-    %% Application Layer
-    B --> D[Flask Backend<br>User Mgmt, Task APIs, Chat APIs<br>LangChain, LangGraph, Celery]
-    subgraph AKS_Cluster [Azure Kubernetes Service]
-        B
-        D
-    end
-
-    %% Cloud Services Layer
-    D -->|REST API| E[Azure OpenAI<br>LLM]
-    D -->|Task Queue| F[Azure Service Bus<br>Task & Query Trigger]
-    D -->|Chat History| G[Azure Cosmos DB<br>Conversation History]
-    D -->|Secrets| H[Azure Key Vault]
-    B -->|Monitoring| I[Azure Monitor<br>Application Insights]
-    D -->|Monitoring| I
-    G -->|Monitoring| I
-
-    %% Data Sources Layer
-    D -->|Data Access| J[SQL Server<br>Structured Data]
-    D -->|Data Access| K[AWS S3<br>Unstructured Data]
-
-    %% Executor Jobs Layer
-    F -->|Job Trigger| L[Data Executor Jobs<br>Containers, Auto-scaling<br>LangChain Tools]
-    subgraph AKS_Executor [Azure Kubernetes Service]
-        L
-    end
-    L -->|Monitoring| I
-    L -->|Secrets| H
-
-    %% Styling
-    classDef azure fill:#0078D4,stroke:#333,stroke-width:2px,color:#fff;
-    classDef aws fill:#FF9900,stroke:#333,stroke-width:2px,color:#fff;
-    classDef user fill:#D3D3D3,stroke:#333,stroke-width:2px;
-    classDef flask fill:#FFA500,stroke:#333,stroke-width:2px,color:#fff;
-    classDef executor fill:#FFA500,stroke:#333,stroke-width:2px,color:#fff;
-
-    A,C:::user
-    E,F,G,H,I,J:::azure
-    K:::aws
-    B,D:::flask
-    L:::executor
-
-    
+   
 **Explanation**:
 - **User Interaction**: CLI passes NLQs to `main.py`, which initializes components.
 - **Core Processing**: Orchestrator coordinates NLP, table identification, SQL generation, and execution.
