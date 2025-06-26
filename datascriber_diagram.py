@@ -16,7 +16,7 @@ with Diagram("Datascriber Architecture", show=False, direction="TB"):
 
     # Application Layer
     with Cluster("Azure Kubernetes Service (AKS)"):
-        flask_frontend = Flask("Flask Web App\nJinja2, Bootstrap, Chat Widget")
+        flask_frontend = Flask("Flask Web App\n Bootstrap, Chat Widget")
         flask_backend = Flask("Flask Backend\nUser Mgmt, Task APIs, Chat APIs\nLangChain, LangGraph, Celery")
 
     # Cloud Services
@@ -28,7 +28,7 @@ with Diagram("Datascriber Architecture", show=False, direction="TB"):
 
     # Data Sources
     sql_server = SQLDatabases("SQL Server\nStructured Data")
-    s3 = S3("AWS S3\nUnstructured Data")
+    s3 = S3("OOS S3\n Archived Data")
 
     # Executor Jobs
     with Cluster("Azure Kubernetes Service (AKS)"):
