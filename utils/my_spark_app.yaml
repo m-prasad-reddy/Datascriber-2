@@ -34,8 +34,8 @@ spec:
       - local:///opt/spark/jars/hadoop-aws-3.3.6.jar
       - local:///opt/spark/jars/aws-java-sdk-bundle-1.12.369.jar
   sparkConf:
-    "spark.hadoop.fs.s3a.access.key": "AKIAVVWF74X2HKPCVX7D"
-    "spark.hadoop.fs.s3a.secret.key": "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"
+    "spark.hadoop.fs.s3a.access.key": ""
+    "spark.hadoop.fs.s3a.secret.key": ""
     "spark.hadoop.fs.s3a.endpoint": "https://bike-stores-bucket.s3.dualstack.us-east-1.amazonaws.com"
     "spark.hadoop.fs.s3a.path.style.access": "true"
     "spark.hadoop.fs.s3a.connection.ssl.enabled": "true"
