@@ -1,0 +1,41 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: {{ job_name }}
+  namespace: default
+spec:
+  type: Python
+  mode: cluster
+  image: {{ docker_image }}
+  imagePullPolicy: Always
+  mainApplicationFile: local:///opt/spark/jobs/query_runner.py
+  arguments:
+    - "--tables"
+    - '{{ table_args | tojson }}'
+    - "--sql"
+    - '{{ sql_query }}'
+    - "--output"
+    - '{{ output_path }}'
+    - "--output_format"
+    - '{{ output_format }}'
+  sparkVersion: "3.5.0"
+  restartPolicy:
+    type: Never
+  driver:
+    cores: 1
+    memory: {{ driver_memory }}
+    serviceAccount: spark
+  executor:
+    cores: {{ executor_cores }}
+    instances: {{ num_executors }}
+    memory: {{ executor_memory }}
+  deps:
+    jars:
+      - local:///opt/spark/jars/hadoop-aws-3.3.6.jar
+      - local:///opt/spark/jars/aws-java-sdk-bundle-1.12.369.jar
+  sparkConf:
+    "spark.hadoop.fs.s3a.access.key": "{{ s3_access_key }}"
+    "spark.hadoop.fs.s3a.secret.key": "{{ s3_secret_key }}"
+    "spark.hadoop.fs.s3a.endpoint": "{{ s3_endpoint }}"
+    "spark.hadoop.fs.s3a.path.style.access": "true"
+    "spark.hadoop.fs.s3a.connection.ssl.enabled": "true"

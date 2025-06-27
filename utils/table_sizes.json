@@ -1,0 +1,5 @@
+{
+  "s3://bike-stores-bucket/data-files/stores.csv": 2.4,
+  "s3://bike-stores-bucket/data-files/orders.csv": 5.8,
+  "s3://bike-stores-bucket/data-files/customers.csv": 4.1
+}

@@ -1,0 +1,41 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: order-query
+  namespace: default
+spec:
+  type: Python
+  mode: cluster
+  image: yourdockeruser/spark-s3:latest
+  imagePullPolicy: Always
+  mainApplicationFile: local:///opt/spark/jobs/query_runner.py
+  arguments:
+    - "--tables"
+    - '[{"format": "parquet", "name": "stores.csv", "path": "s3://bike-stores-bucket/data-files/stores.csv"}, {"format": "parquet", "name": "orders.csv", "path": "s3://bike-stores-bucket/data-files/orders.csv"}, {"format": "parquet", "name": "customers.csv", "path": "s3://bike-stores-bucket/data-files/customers.csv"}]'
+    - "--sql"
+    - 'SELECT order_id,customer_id,order_status,required_date,shipped_date,store_id,staff_id WHERE YEAR(order_date)=2016'
+    - "--output"
+    - 's3://bike-stores-bucket/data-files/outgoing/'
+    - "--output_format"
+    - 'parquet'
+  sparkVersion: "3.5.0"
+  restartPolicy:
+    type: Never
+  driver:
+    cores: 1
+    memory: 2g
+    serviceAccount: spark
+  executor:
+    cores: 4
+    instances: 8
+    memory: 16g
+  deps:
+    jars:
+      - local:///opt/spark/jars/hadoop-aws-3.3.6.jar
+      - local:///opt/spark/jars/aws-java-sdk-bundle-1.12.369.jar
+  sparkConf:
+    "spark.hadoop.fs.s3a.access.key": "AKIAVVWF74X2HKPCVX7D"
+    "spark.hadoop.fs.s3a.secret.key": "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"
+    "spark.hadoop.fs.s3a.endpoint": "https://bike-stores-bucket.s3.dualstack.us-east-1.amazonaws.com"
+    "spark.hadoop.fs.s3a.path.style.access": "true"
+    "spark.hadoop.fs.s3a.connection.ssl.enabled": "true"
